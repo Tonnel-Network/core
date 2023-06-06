@@ -1,0 +1,98 @@
+#include "imports/stdlib.fc";
+
+const op::verify = "op::verify"c; ;; create an opcode from string using the "c" prefix, this results in 0x3b3cca17 opcode in this case
+const error::verify_failed = 1001;
+
+;; storage variables
+
+
+;; load_data populates storage variables using stored data
+() load_data() impure {
+    var ds = get_data().begin_parse();
+    ds.end_parse();
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data() impure {
+    set_data(
+            begin_cell()
+                    .end_cell()
+    );
+}
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+
+    load_data(); ;; here we populate the storage variables
+
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+
+    if (op == op::verify) {
+
+        
+        ;;
+        ;;
+        ;; Verifying Key constants 
+        ;;
+        ;;
+        
+       
+       slice alf1 =  begin_cell().store_uint(200748209022530, 48).store_uint(250485663787781, 48).store_uint(272329627744478, 48).store_uint(273822951805670, 48).store_uint(51604007647472, 48).store_uint(166512905240582, 48).store_uint(34618385710091, 48).store_uint(144891229072890, 48).end_cell().begin_parse();       
+       slice IC0 =  begin_cell().store_uint(201000924075315, 48).store_uint(210159496726354, 48).store_uint(256061841122659, 48).store_uint(132419061529530, 48).store_uint(204200145421775, 48).store_uint(42965732827239, 48).store_uint(123667806115743, 48).store_uint(206350753190447, 48).end_cell().begin_parse();       
+       slice IC1 =  begin_cell().store_uint(192317256214309, 48).store_uint(225439703645184, 48).store_uint(226604778851893, 48).store_uint(74108294409699, 48).store_uint(134714331647950, 48).store_uint(206386820849546, 48).store_uint(249330331705334, 48).store_uint(30166382433063, 48).end_cell().begin_parse();       
+       slice beta2 =  begin_cell().store_uint(53135715938640298175991415457, 96).store_uint(76527010799382551799120166715, 96).store_uint(65535011292491495591483903333, 96).store_uint(29471512123243815847120163864, 96).store_uint(5220010970223087187584268185, 96).store_uint(55611768110058222134164985518, 96).store_uint(17993705653486759074737056489, 96).store_uint(42660174201480223603823043952, 96).end_cell().begin_parse();       
+       slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();       
+       slice delta2 =  begin_cell().store_uint(50110080356574159188483742615, 96).store_uint(67565053135565055982692344155, 96).store_uint(1041466234970777886529255735, 96).store_uint(68829544879051734019488004666, 96).store_uint(3065610844675264468812706978, 96).store_uint(55685056954465471639266603161, 96).store_uint(23817157459384253143801205836, 96).store_uint(77125139888143675886504594388, 96).end_cell().begin_parse();       
+       
+      ;;
+      ;;
+      ;; Proof inputs 
+      ;;
+      ;;
+       
+       
+       slice A =  begin_cell().store_uint(186329082604545, 48).store_uint(123439698075768, 48).store_uint(14276129766591, 48).store_uint(246614540951615, 48).store_uint(168390524478965, 48).store_uint(241558557422586, 48).store_uint(240802537569156, 48).store_uint(95500394144229, 48).end_cell().begin_parse();       
+       slice B =  begin_cell().store_uint(53225139350262511148972509408, 96).store_uint(75249261623365035278276748772, 96).store_uint(69608704893659417280464339295, 96).store_uint(47772511903593411418077968345, 96).store_uint(1451911772613779346975741449, 96).store_uint(36195647416675464954605251155, 96).store_uint(67528458160807746699318389726, 96).store_uint(40565068925551364204277320601, 96).end_cell().begin_parse();       
+       slice C =  begin_cell().store_uint(156737048798513, 48).store_uint(1293215405594, 48).store_uint(167206691431717, 48).store_uint(185276422631584, 48).store_uint(20192627002516, 48).store_uint(118485509969042, 48).store_uint(79853370428526, 48).store_uint(159209292874433, 48).end_cell().begin_parse();       
+       slice vk_x = IC0;       
+       vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, 6859562141590397));       
+       
+      ;; pairing check
+        
+      slice neg_a = bls_g1_negate(A);
+      int success = bls_pairing_check(neg_a,
+                      B,
+                      alf1,
+                      beta2,
+                      vk_x,
+                      gamma2,
+                      C,
+                      delta2,
+                      4);
+
+
+
+        if (success) {
+            save_data();
+            return ();
+            ;; verifiaction successful
+        }
+        throw(error::verify_failed); ;; verifiaction failed
+    }
+
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+;; get methods are a means to conveniently read contract data using, for example, HTTP APIs
+;; they are marked with method_id
+;; note that unlike in many other smart contract VMs, get methods cannot be called by other contracts
