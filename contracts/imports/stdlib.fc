@@ -631,8 +631,6 @@ slice bls_g1_add(slice x, slice y) asm "BLS_G1_ADD";
 
 int get_gas_spent() asm "GASCONSUMED";
 
-;; int bls_pairing_check2(slice x1, slice y1, slice x2, slice y2, int n) asm "BLS_PAIRING";
-;; int bls_pairing_check3(slice x1, slice y1, slice x2, slice y2,slice x_3, slice y_3, int n) asm "BLS_PAIRING";
 int bls_pairing_check(slice x1, slice y1, slice x2, slice y2, slice x_3, slice y_3, slice x_4, slice y_4, int n) asm "BLS_PAIRING";
 int bls_is_zero_g2(slice x) asm "BLS_G2_ISZERO";
 int bls_is_ingroup_g1(slice x) asm "BLS_G1_INGROUP";
