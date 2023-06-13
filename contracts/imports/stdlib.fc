@@ -641,3 +641,48 @@ slice bls_map_to_g1(slice f) asm "BLS_MAP_TO_G1";
 int bls_verify(slice pk, slice msg, slice sgn) asm "BLS_VERIFY";
 
 int tuples::tlen(tuple t) asm "TLEN";
+forall X -> (tuple) to_tuple (X x) asm "NOP";
+forall X -> X at_index (tuple t, int idx) asm "INDEXVAR";
+
+
+
+const U255_MAX_PLUS_1 = 57896044618658097711785492504343953926634992332820282019728792003956564819968;
+const U128_MAX = 340282366920938463463374607431768211455;
+
+int _::curve_math::mulmod(int a, int b, int m) inline { (_, int r) = muldivmod(a, b, m); return r; }
+int _::curve_math::addmod(int a, int b, int m) inline {
+    if 0 == b {
+        return a;
+    }
+
+    b = m - b;
+    if a >= b {
+        return a - b;
+    }
+    return m - b + a;
+}
+
+
+(int) expMod(int _base, int _exp, int _pp) inline  {
+;;     throw_unless(10011, _pp!=0);
+    if _base == 0 {
+        return 0;
+    }
+    if _exp == 0 {
+        return 1;
+    }
+    _base = _base % _pp;
+    int r = 1;
+    int bit = U255_MAX_PLUS_1;
+    while bit {
+        r = _::curve_math::mulmod(_::curve_math::mulmod(r, r, _pp), (_exp & bit       ? _base : 1), _pp);
+        r = _::curve_math::mulmod(_::curve_math::mulmod(r, r, _pp), (_exp & (bit / 2) ? _base : 1), _pp);
+        r = _::curve_math::mulmod(_::curve_math::mulmod(r, r, _pp), (_exp & (bit / 4) ? _base : 1), _pp);
+        r = _::curve_math::mulmod(_::curve_math::mulmod(r, r, _pp), (_exp & (bit / 8) ? _base : 1), _pp);
+        bit >>= 4;
+    }
+
+    return r;
+}
+
+
