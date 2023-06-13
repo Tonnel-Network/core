@@ -3,7 +3,7 @@
   "license": "Apache-2.0",
   "author": "@Saber_coder",
   "scripts": {
-    "build": "node prepareZkey.js",
+    "build": "bash downloadZkey.sh && node prepareZkey.js",
     "test": "jest"
   },
   "devDependencies": {
