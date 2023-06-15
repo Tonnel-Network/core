@@ -12,6 +12,18 @@
 
 }
 
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+            .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+            .store_uint (1, 2)
+            .store_uint (256, 9)
+            .store_uint(event_id, 256)
+            .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+            .store_slice(data)
+            .end_cell();
+    send_raw_message(msg, 0);
+}
+
 
 ;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
 () recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
@@ -34,14 +46,16 @@
         save_data(init, merkle, fee_info, nullifiers);
         return ();
     }
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
     if(init == 21) { ;; continue merkle tree operation
+        throw_unless(error::access_denied, op == 0);
         (int index, init, merkle) = insert(0, 0, merkle);
         save_data(init, merkle, fee_info, nullifiers);
         return ();
     }
 
-    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
-    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+
     if (op == op::deposit) {
         int fee_amount = POOL_SIZE * 2 / 100; ;; 2% fee
         throw_unless(error::fund, msg_value > POOL_SIZE + fee_amount + const::tx_fee);
@@ -53,6 +67,8 @@
 
 
         (int index, init, merkle) = insert(commitment_value, 1, merkle);
+
+        emit_log_simple(op::deposit, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
         save_data(init, merkle, fee_info, nullifiers);
         return ();
     }
@@ -98,6 +114,12 @@
         slice B = B_cell.begin_parse();
         slice C = C_cell.begin_parse();
         slice vk_x = IC0;
+        throw_unless(error::verify_failed_input, root < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, recipient.preload_uint(256) < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, relayer.preload_uint(256) < FIELD_SIZE);
+
+
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, nullifier_hash));
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, recipient.preload_uint(256)));

@@ -2,7 +2,7 @@
 
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 const ZERO_VALUE = 21663839004416932945382355908790599225266501822907911457504978515578255421292;
-const POOL_SIZE = 200 * 1000000000; ;; 200 TON
+const POOL_SIZE = 2 * 1000000000; ;; 2 TON for TESTNET
 
 
 const op::deposit = 0x888;
@@ -18,8 +18,9 @@ const error::verify_failed = 104;
 const error::verify_failed_fee = 105;
 const error::verify_failed_root = 106;
 const error::verify_failed_double_spend = 107;
+const error::verify_failed_input = 108;
 ;; other
-const const::tx_fee = 900000000; ;; 0.8 TON
+const const::tx_fee = 900000000; ;; 0.9 TON
 
 
 (slice) numbers_to_string(int left, int right) inline {
@@ -118,7 +119,7 @@ const const::tx_fee = 900000000; ;; 0.8 TON
     if(i == 20){
 
         roots~udict_set(8, 0, begin_cell().store_uint(sha256LeftRightSlice(current_zero, current_zero), 256).end_cell().begin_parse());
-        return (i, begin_cell().store_uint(0, 8).store_uint(0, 8).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell()); ;;currentRootIndex  = 0, nextIndex =0
+        return (i, begin_cell().store_uint(0, 8).store_uint(0, 32).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell()); ;;currentRootIndex  = 0, nextIndex =0
 
     }
     return (i, begin_cell().store_uint(current_zero_value, 256).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell());
@@ -127,7 +128,7 @@ const const::tx_fee = 900000000; ;; 0.8 TON
 (int,int, cell) insert(int leaf, int init, cell merkle_data_cell) impure {
     slice merkle_data = merkle_data_cell.begin_parse();
     int currentRootIndex = merkle_data~load_uint(8);
-    int nextIndex = merkle_data~load_uint(8);
+    int nextIndex = merkle_data~load_uint(32);
     cell zeros = merkle_data~load_dict();
     cell filled_subtrees = merkle_data~load_dict();
     cell roots = merkle_data~load_dict();
@@ -144,7 +145,7 @@ const const::tx_fee = 900000000; ;; 0.8 TON
         left = backup~load_uint(256);
         right = backup~load_uint(256);
         i = backup~load_uint(8);
-        currentIndex = backup~load_uint(8);
+        currentIndex = backup~load_uint(32);
     }
 
 
@@ -171,15 +172,15 @@ const const::tx_fee = 900000000; ;; 0.8 TON
         currentRootIndex = (currentRootIndex + 1) % 100;
         roots~udict_set(8, currentRootIndex, begin_cell().store_uint(current_level_hash, 256).end_cell().begin_parse());
         nextIndex = nextIndex + 1;
-        return (nextIndex - 1, 20, begin_cell().store_uint(currentRootIndex, 8).store_uint(nextIndex, 8).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell());
+        return (nextIndex - 1, 20, begin_cell().store_uint(currentRootIndex, 8).store_uint(nextIndex, 32).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell());
 
     }
 
 
-    return (nextIndex - 1, 21,
+    return (nextIndex, 21,
             begin_cell()
                     .store_uint(currentRootIndex, 8)
-                    .store_uint(nextIndex, 8)
+                    .store_uint(nextIndex, 32)
                     .store_dict(zeros)
                     .store_dict(filled_subtrees)
                     .store_dict(roots)
@@ -188,7 +189,7 @@ const const::tx_fee = 900000000; ;; 0.8 TON
                                        .store_uint(left, 256)
                                        .store_uint(right, 256)
                                        .store_uint(i, 8)
-                                       .store_uint(currentIndex, 8)
+                                       .store_uint(currentIndex, 32)
                                        .end_cell())
                     .end_cell());
 
@@ -207,7 +208,7 @@ const const::tx_fee = 900000000; ;; 0.8 TON
     (int init, cell merkle_cell, _, _) = load_data();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
-    merkle~load_uint(8);
+    merkle~load_uint(32);
     merkle~load_dict();
     merkle~load_dict();
     cell roots = merkle~load_dict();
@@ -246,11 +247,10 @@ const const::tx_fee = 900000000; ;; 0.8 TON
 }
 
 (int) get_last_root() method_id {
-
     (int init, cell merkle_cell, _, _) = load_data();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
-    merkle~load_uint(8);
+    merkle~load_uint(32);
     merkle~load_dict();
     merkle~load_dict();
     cell roots = merkle~load_dict();
@@ -259,7 +259,4 @@ const const::tx_fee = 900000000; ;; 0.8 TON
         return 0;
     }
     return root_slice~load_uint(256);
-
-
 }
-

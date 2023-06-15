@@ -13,7 +13,7 @@ const wasmPath = path.join(__dirname, "../build/circuits/circuit.wasm");
 const zkeyPath = path.join(__dirname, "../build/circuits/circuit_final.zkey");
 
 const fee = 0.02;
-const pool_size = 200;
+const pool_size = 2;
 const deposit_fee = 0.95;
 
 
