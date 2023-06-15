@@ -116,8 +116,6 @@
         slice vk_x = IC0;
         throw_unless(error::verify_failed_input, root < FIELD_SIZE);
         throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
-        throw_unless(error::verify_failed_input, recipient.preload_uint(256) < FIELD_SIZE);
-        throw_unless(error::verify_failed_input, relayer.preload_uint(256) < FIELD_SIZE);
 
 
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
