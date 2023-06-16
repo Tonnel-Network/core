@@ -30,5 +30,12 @@ withdrawn TON. Users can deposit TON in a specific denomination and withdraw the
 - [x] Implement the merkle tree functionality and write tests for it
 - [x] Implement the [MIMCSponge hash](https://github.com/SaberDoTcodeR/Tonnel-Network/blob/main/contracts/MiMcSponge.fc) function in func(It was too expensive so I used Sha256 instead)
 - [x] Implement the deposit and withdraw functionality and write tests for them
-- [ ] Build a frontend for the contract (I am not a frontend developer so I will need help with this, contact me on TG if you are interested:) - The current version of the frontend is [here](https://tonnel.network)
+- [ ] Build a frontend for the contract (I will need help with this, contact me on TG if you are interested:) - The current version of the frontend is [here](https://tonnel.network)
 - [ ] Implement an indexer for the contract so that the frontend can easily generate the merkle tree and proofs for withdraw
+
+
+## Demo 
+You can see a demo of the contract [here](https://tonnel.network). It is [deployed](https://testnet.tonscan.org/address/EQAGVfMkbxcsxWOkCnh4QIO6HHlBnaxETwVz6AoliXf2ndvf) on testnet and you can deposit and withdraw TON on it. The frontend is fully functional but it is not optimized yet. It is only for testing purposes.
+
+
+
