@@ -25,5 +25,11 @@ export async function run(provider: NetworkProvider) {
   await tonnel.sendContinue(provider.sender(), {
     value: toNano('0.8'),
   });
+  console.log('done')
 
 }
+
+
+
+
+

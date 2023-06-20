@@ -1,0 +1,204 @@
+#include "imports/merkleTreeJetton.fc";
+#include "jetton/imports/jetton-utils.fc";
+#include "jetton/imports/op-codes.fc";
+
+() send_jetton(slice recepient, int amount, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
+    slice jetton_wallet = calculate_user_jetton_wallet_address(my_address(), JETTON_MASTER_ADDRESS, JETTON_BYTE_CODE);
+
+    var msg = begin_cell()
+            .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+            .store_slice(jetton_wallet)
+            .store_coins(const::tx_fee_send_jetton)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(op::transfer(), 32)
+            .store_uint(0, 64)
+            .store_coins(amount)
+            .store_slice(recepient)
+            .store_uint(0,2)
+            .store_uint(0, 1)
+            .store_coins(0)
+            .store_uint(0, 1);
+    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
+
+}
+
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+            .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+            .store_uint (1, 2)
+            .store_uint (256, 9)
+            .store_uint(event_id, 256)
+            .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+            .store_slice(data)
+            .end_cell();
+    send_raw_message(msg, 0);
+}
+
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    (int init, cell merkle, cell fee_info, cell nullifiers, cell jetton_info) = load_data(); ;; here we populate the storage variables
+    slice fee_info_slice = fee_info.begin_parse();
+    slice fee_recepient = fee_info_slice~load_msg_addr();
+    int fee_percent = fee_info_slice~load_uint(8);
+    if (init < 20) { ;; init merkle tree
+        (init, merkle) = construct_tree(init, merkle);
+        save_data(init, merkle, fee_info, nullifiers, jetton_info);
+        return ();
+    }
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+    if(init == 21) { ;; continue merkle tree operation
+        if(op == op::transfer_notification()){
+            int send_amount = in_msg_body~load_coins(); ;; Jettons send
+
+            slice jetton_info_slice = jetton_info.begin_parse();
+            slice jetton_master_address = jetton_info_slice~load_msg_addr();
+            cell JETTON_BYTECODE = jetton_info_slice~load_ref();
+            slice origin_sender = in_msg_body~load_msg_addr(); ;; transfer origin address (not used)
+
+            send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
+            return ();
+        }
+        throw_unless(error::access_denied, op == 0);
+        (int index, init, merkle) = insert(0, 0, merkle);
+        save_data(init, merkle, fee_info, nullifiers, jetton_info);
+
+        ;; should Return token to sender
+        return ();
+    }
+
+
+    if (op == op::transfer_notification()) {
+        ;; should check if jetton is valid
+        int send_amount = in_msg_body~load_coins(); ;; Jettons send
+
+        slice jetton_info_slice = jetton_info.begin_parse();
+        slice jetton_master_address = jetton_info_slice~load_msg_addr();
+        cell JETTON_BYTECODE = jetton_info_slice~load_ref();
+        int fee_amount = POOL_SIZE * fee_percent / 100; ;; 2% fee
+        throw_unless(error::jetton_sender, equal_slices(sender_address, calculate_user_jetton_wallet_address(my_address(), jetton_master_address, JETTON_BYTECODE)));
+        throw_unless(error::fund_fee, msg_value > const::tx_fee + const::tx_fee_send_jetton);
+        slice origin_sender = in_msg_body~load_msg_addr(); ;; transfer origin address (not used)
+
+        if (send_amount != POOL_SIZE + fee_amount){
+            send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
+            return ();
+
+        }
+
+
+        cell commitment = in_msg_body~load_ref();
+
+        slice commitment_slice = commitment.begin_parse();
+
+        int commitment_value = commitment_slice~load_uint(256);
+
+        send_jetton(fee_recepient, fee_amount, jetton_master_address, JETTON_BYTECODE);
+
+
+        (int index, init, merkle) = insert(commitment_value, 1, merkle);
+
+        emit_log_simple(op::deposit, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
+        save_data(init, merkle, fee_info, nullifiers, jetton_info);
+        return ();
+    }
+    if (op == op::withdraw) {
+
+        ;;
+        ;;
+        ;; Verifying Key constants
+        ;;
+        ;;
+
+
+        slice alf1 = begin_cell().store_uint(161660088803638, 48).store_uint(174915596092591, 48).store_uint(103625742955285, 48).store_uint(45033598540138, 48).store_uint(228788439962206, 48).store_uint(278692321121119, 48).store_uint(106161774861813, 48).store_uint(150828133086774, 48).end_cell().begin_parse();
+        slice IC0 = begin_cell().store_uint(198734886235152, 48).store_uint(270688156946931, 48).store_uint(112508028364329, 48).store_uint(122645081021291, 48).store_uint(28188573404594, 48).store_uint(225545055387097, 48).store_uint(37012289517426, 48).store_uint(91673317588934, 48).end_cell().begin_parse();
+        slice IC1 = begin_cell().store_uint(195658105405276, 48).store_uint(59242472843280, 48).store_uint(23825164139004, 48).store_uint(38279805300205, 48).store_uint(70128305581019, 48).store_uint(47180429633419, 48).store_uint(81690607721703, 48).store_uint(202441497786955, 48).end_cell().begin_parse();
+        slice IC2 = begin_cell().store_uint(184355270408153, 48).store_uint(64954318354146, 48).store_uint(41232389418099, 48).store_uint(29537920223447, 48).store_uint(188338048208356, 48).store_uint(182015654147713, 48).store_uint(142020262199357, 48).store_uint(76284105946639, 48).end_cell().begin_parse();
+        slice IC3 = begin_cell().store_uint(180610082395044, 48).store_uint(14540165537751, 48).store_uint(182214427406371, 48).store_uint(142054315957449, 48).store_uint(39900639088850, 48).store_uint(166609491813251, 48).store_uint(275682676679317, 48).store_uint(39772333598831, 48).end_cell().begin_parse();
+        slice IC4 = begin_cell().store_uint(149958847581547, 48).store_uint(265304090894609, 48).store_uint(85879273179881, 48).store_uint(257079994242381, 48).store_uint(172425915546057, 48).store_uint(169387703897721, 48).store_uint(100689432960847, 48).store_uint(231902615529858, 48).end_cell().begin_parse();
+        slice IC5 = begin_cell().store_uint(153852837368681, 48).store_uint(174287050705965, 48).store_uint(204450506064270, 48).store_uint(189706391722098, 48).store_uint(189767970573901, 48).store_uint(136192373972096, 48).store_uint(81492893094496, 48).store_uint(245874980060711, 48).end_cell().begin_parse();
+        slice beta2 = begin_cell().store_uint(40511421779752075222938674879, 96).store_uint(46553825265619401190767531056, 96).store_uint(74130811668289816077621761178, 96).store_uint(13483243887395268113068016732, 96).store_uint(7772804059625168115464635933, 96).store_uint(54815215219919490460882481977, 96).store_uint(5420380133122972551295531159, 96).store_uint(37637895364775297944481669936, 96).end_cell().begin_parse();
+        slice gamma2 = begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+        slice delta2 = begin_cell().store_uint(50399617953140208136627891440, 96).store_uint(1802028846705804365683181565, 96).store_uint(74077773234918565063662311223, 96).store_uint(60214904836979070376633948573, 96).store_uint(1637547889170880345157045238, 96).store_uint(21021888002891336085613532132, 96).store_uint(20986649065748528956471351355, 96).store_uint(593806167623982827456134185, 96).end_cell().begin_parse();
+
+        ;;
+        ;;
+        ;; Proof inputs
+        ;;
+        ;;
+        cell withdraw_info = in_msg_body~load_ref();
+        slice withdraw_info_slice1 = withdraw_info.begin_parse();
+        int root = withdraw_info_slice1~load_uint(256);
+        int nullifier_hash = withdraw_info_slice1~load_uint(256);
+        int fee_coef = withdraw_info_slice1~load_uint(10);
+        cell addresses = withdraw_info_slice1~load_ref();
+        slice addresses_slice = addresses.begin_parse();
+        slice recipient = addresses_slice~load_msg_addr();
+        slice relayer = addresses_slice~load_msg_addr();
+
+        cell A_cell = withdraw_info_slice1~load_ref();
+        cell B_cell = withdraw_info_slice1~load_ref();
+        cell C_cell = withdraw_info_slice1~load_ref();
+        slice A = A_cell.begin_parse();
+        slice B = B_cell.begin_parse();
+        slice C = C_cell.begin_parse();
+        slice vk_x = IC0;
+        throw_unless(error::verify_failed_input, root < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
+
+
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, nullifier_hash));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, recipient.preload_uint(256)));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, relayer.preload_uint(256)));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC5, fee_coef));
+        throw_unless(error::verify_failed_fee, fee_coef < 1000);
+        throw_unless(error::verify_failed_root, is_known_root(root));
+        throw_unless(error::verify_failed_double_spend, is_unknown_nullifier(nullifier_hash, nullifiers));
+
+        slice neg_a = bls_g1_negate(A);
+        int success = bls_pairing_check(neg_a,
+                B,
+                alf1,
+                beta2,
+                vk_x,
+                gamma2,
+                C,
+                delta2,
+                4);
+        ifnot (success){
+            throw(error::verify_failed);
+        }
+
+        nullifiers~udict_set(256, nullifier_hash, begin_cell().end_cell().begin_parse());
+        int fee_amount = fee_coef * POOL_SIZE / 1000;
+
+        slice jetton_info_slice = jetton_info.begin_parse();
+        slice jetton_master_address = jetton_info_slice~load_msg_addr();
+        cell JETTON_BYTECODE = jetton_info_slice~load_ref();
+
+        send_jetton(recipient, POOL_SIZE - fee_amount, jetton_master_address, JETTON_BYTECODE);
+        send_jetton(relayer, fee_amount, jetton_master_address, JETTON_BYTECODE);
+        save_data(init, merkle, fee_info, nullifiers, jetton_info);
+        return();
+
+
+    }
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+
