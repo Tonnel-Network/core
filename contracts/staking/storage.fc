@@ -1,0 +1,33 @@
+#include "../imports/stdlib.fc";
+
+;; storage variables
+int op::stake_TON() asm "777 PUSHINT";
+int op::stake_TONNEL() asm "778 PUSHINT";
+int op::withdraw_TON() asm "779 PUSHINT";
+int op::withdraw_TONNEL() asm "780 PUSHINT";
+const error::not_staked = 700;
+const error::not_enough = 701;
+const error::jetton_sender = 109;
+const error::fund = 103;
+
+const const::tx_fee = 2 * 10000000;
+const const::tx_fee_send_jetton = 35000000; ;; 0.035 TON
+
+
+;; load_data populates storage variables using stored data
+(cell, cell) load_data() impure {
+    var ds = get_data().begin_parse();
+    cell states = ds~load_dict();
+    cell jetton_info = ds~load_ref();
+
+    ds.end_parse();
+    return (states, jetton_info);
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data(cell states, cell jetton_info) impure {
+    set_data(
+            begin_cell().store_dict(states).store_ref(jetton_info)
+                    .end_cell()
+    );
+}

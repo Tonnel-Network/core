@@ -99,7 +99,6 @@ export class TonnelJetton implements Contract {
       root: bigint;
       nullifierHash: bigint;
       recipient: Address;
-      relayer: Address;
       fee: bigint;
     }
   ) {
@@ -116,7 +115,7 @@ export class TonnelJetton implements Contract {
             .storeUint(opts.fee, 10)
             .storeRef(
               beginCell().storeAddress(opts.recipient)
-                .storeAddress(opts.relayer).endCell()
+                .endCell()
             ).storeRef(opts.a).storeRef(opts.b)
             .storeRef(opts.c)
             .endCell()

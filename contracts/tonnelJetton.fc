@@ -124,16 +124,15 @@
         ;;
 
 
-        slice alf1 = begin_cell().store_uint(161660088803638, 48).store_uint(174915596092591, 48).store_uint(103625742955285, 48).store_uint(45033598540138, 48).store_uint(228788439962206, 48).store_uint(278692321121119, 48).store_uint(106161774861813, 48).store_uint(150828133086774, 48).end_cell().begin_parse();
-        slice IC0 = begin_cell().store_uint(198734886235152, 48).store_uint(270688156946931, 48).store_uint(112508028364329, 48).store_uint(122645081021291, 48).store_uint(28188573404594, 48).store_uint(225545055387097, 48).store_uint(37012289517426, 48).store_uint(91673317588934, 48).end_cell().begin_parse();
-        slice IC1 = begin_cell().store_uint(195658105405276, 48).store_uint(59242472843280, 48).store_uint(23825164139004, 48).store_uint(38279805300205, 48).store_uint(70128305581019, 48).store_uint(47180429633419, 48).store_uint(81690607721703, 48).store_uint(202441497786955, 48).end_cell().begin_parse();
-        slice IC2 = begin_cell().store_uint(184355270408153, 48).store_uint(64954318354146, 48).store_uint(41232389418099, 48).store_uint(29537920223447, 48).store_uint(188338048208356, 48).store_uint(182015654147713, 48).store_uint(142020262199357, 48).store_uint(76284105946639, 48).end_cell().begin_parse();
-        slice IC3 = begin_cell().store_uint(180610082395044, 48).store_uint(14540165537751, 48).store_uint(182214427406371, 48).store_uint(142054315957449, 48).store_uint(39900639088850, 48).store_uint(166609491813251, 48).store_uint(275682676679317, 48).store_uint(39772333598831, 48).end_cell().begin_parse();
-        slice IC4 = begin_cell().store_uint(149958847581547, 48).store_uint(265304090894609, 48).store_uint(85879273179881, 48).store_uint(257079994242381, 48).store_uint(172425915546057, 48).store_uint(169387703897721, 48).store_uint(100689432960847, 48).store_uint(231902615529858, 48).end_cell().begin_parse();
-        slice IC5 = begin_cell().store_uint(153852837368681, 48).store_uint(174287050705965, 48).store_uint(204450506064270, 48).store_uint(189706391722098, 48).store_uint(189767970573901, 48).store_uint(136192373972096, 48).store_uint(81492893094496, 48).store_uint(245874980060711, 48).end_cell().begin_parse();
-        slice beta2 = begin_cell().store_uint(40511421779752075222938674879, 96).store_uint(46553825265619401190767531056, 96).store_uint(74130811668289816077621761178, 96).store_uint(13483243887395268113068016732, 96).store_uint(7772804059625168115464635933, 96).store_uint(54815215219919490460882481977, 96).store_uint(5420380133122972551295531159, 96).store_uint(37637895364775297944481669936, 96).end_cell().begin_parse();
-        slice gamma2 = begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
-        slice delta2 = begin_cell().store_uint(50399617953140208136627891440, 96).store_uint(1802028846705804365683181565, 96).store_uint(74077773234918565063662311223, 96).store_uint(60214904836979070376633948573, 96).store_uint(1637547889170880345157045238, 96).store_uint(21021888002891336085613532132, 96).store_uint(20986649065748528956471351355, 96).store_uint(593806167623982827456134185, 96).end_cell().begin_parse();
+        slice alf1 =  begin_cell().store_uint(161660088803638, 48).store_uint(174915596092591, 48).store_uint(103625742955285, 48).store_uint(45033598540138, 48).store_uint(228788439962206, 48).store_uint(278692321121119, 48).store_uint(106161774861813, 48).store_uint(150828133086774, 48).end_cell().begin_parse();
+        slice IC0 =  begin_cell().store_uint(152168983986473, 48).store_uint(221619329025907, 48).store_uint(26058364908651, 48).store_uint(35604054704562, 48).store_uint(57203835768825, 48).store_uint(23557499860187, 48).store_uint(42609274589494, 48).store_uint(108382761734656, 48).end_cell().begin_parse();
+        slice IC1 =  begin_cell().store_uint(164996640165502, 48).store_uint(85052392486217, 48).store_uint(230787547593235, 48).store_uint(265167565426289, 48).store_uint(191597895479334, 48).store_uint(70185006854731, 48).store_uint(194140300250582, 48).store_uint(264120215580019, 48).end_cell().begin_parse();
+        slice IC2 =  begin_cell().store_uint(196592908685427, 48).store_uint(171795943161434, 48).store_uint(26305700148551, 48).store_uint(242673637058235, 48).store_uint(153868280733666, 48).store_uint(278144529944446, 48).store_uint(179756494421439, 48).store_uint(19033129735694, 48).end_cell().begin_parse();
+        slice IC3 =  begin_cell().store_uint(149397898625681, 48).store_uint(183274318457704, 48).store_uint(122348135847249, 48).store_uint(180333610873960, 48).store_uint(38633688436053, 48).store_uint(14924843828286, 48).store_uint(142397979274840, 48).store_uint(206932104524486, 48).end_cell().begin_parse();
+        slice IC4 =  begin_cell().store_uint(149985373542668, 48).store_uint(170418859049460, 48).store_uint(271825152980378, 48).store_uint(239412532914807, 48).store_uint(39615645556313, 48).store_uint(216566621606908, 48).store_uint(160488800591702, 48).store_uint(238837834336217, 48).end_cell().begin_parse();
+        slice beta2 =  begin_cell().store_uint(40511421779752075222938674879, 96).store_uint(46553825265619401190767531056, 96).store_uint(74130811668289816077621761178, 96).store_uint(13483243887395268113068016732, 96).store_uint(7772804059625168115464635933, 96).store_uint(54815215219919490460882481977, 96).store_uint(5420380133122972551295531159, 96).store_uint(37637895364775297944481669936, 96).end_cell().begin_parse();
+        slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+        slice delta2 =  begin_cell().store_uint(41927526620200715382934117118, 96).store_uint(33003720790981973342161950360, 96).store_uint(29172541997772449919163419697, 96).store_uint(42084828233699416556951173819, 96).store_uint(2487209597368882800290830367, 96).store_uint(13746812365516576600981842744, 96).store_uint(47485423923078880599824467725, 96).store_uint(50383785865280499143808869142, 96).end_cell().begin_parse();
 
         ;;
         ;;
@@ -148,7 +147,6 @@
         cell addresses = withdraw_info_slice1~load_ref();
         slice addresses_slice = addresses.begin_parse();
         slice recipient = addresses_slice~load_msg_addr();
-        slice relayer = addresses_slice~load_msg_addr();
 
         cell A_cell = withdraw_info_slice1~load_ref();
         cell B_cell = withdraw_info_slice1~load_ref();
@@ -164,8 +162,7 @@
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, nullifier_hash));
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, recipient.preload_uint(256)));
-        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, relayer.preload_uint(256)));
-        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC5, fee_coef));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, fee_coef));
         throw_unless(error::verify_failed_fee, fee_coef < 1000);
         throw_unless(error::verify_failed_root, is_known_root(root));
         throw_unless(error::verify_failed_double_spend, is_unknown_nullifier(nullifier_hash, nullifiers));
@@ -192,7 +189,7 @@
         cell JETTON_BYTECODE = jetton_info_slice~load_ref();
 
         send_jetton(recipient, POOL_SIZE - fee_amount, jetton_master_address, JETTON_BYTECODE);
-        send_jetton(relayer, fee_amount, jetton_master_address, JETTON_BYTECODE);
+        send_jetton(sender_address, fee_amount, jetton_master_address, JETTON_BYTECODE);
         save_data(init, merkle, fee_info, nullifiers, jetton_info);
         return();
 

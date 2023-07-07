@@ -24,7 +24,6 @@ template Withdraw(levels) {
     signal input root;
     signal input nullifierHash;
     signal input recipient; // not taking part in any computations
-    signal input relayer;  // not taking part in any computations
     signal input fee;      // not taking part in any computations
     signal private input nullifier;
 
@@ -51,11 +50,8 @@ template Withdraw(levels) {
     // Squares are used to prevent optimizer from removing those constraints
     signal recipientSquare;
     signal feeSquare;
-    signal relayerSquare;
-    signal refundSquare;
     recipientSquare <== recipient * recipient;
     feeSquare <== fee * fee;
-    relayerSquare <== relayer * relayer;
 }
 
 component main = Withdraw(20);

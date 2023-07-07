@@ -1,0 +1,147 @@
+#include "imports/merkleTree.fc";
+
+
+() send_ton(slice recepient, int amount) impure inline {
+    var msg = begin_cell()
+            .store_uint(0x10, 6)
+            .store_slice(recepient)
+            .store_grams(amount)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .end_cell();
+    send_raw_message(msg, 1);
+
+}
+
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+            .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+            .store_uint (1, 2)
+            .store_uint (256, 9)
+            .store_uint(event_id, 256)
+            .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+            .store_slice(data)
+            .end_cell();
+    send_raw_message(msg, 0);
+}
+
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    (int init, cell merkle, cell fee_info, cell nullifiers) = load_data(); ;; here we populate the storage variables
+    slice fee_info_slice = fee_info.begin_parse();
+    slice fee_recepient = fee_info_slice~load_msg_addr();
+    if (init < 20) { ;; init merkle tree
+        (init, merkle) = construct_tree(init, merkle);
+        save_data(init, merkle, fee_info, nullifiers);
+        return ();
+    }
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+    if(init == 21) { ;; continue merkle tree operation
+        throw_unless(error::access_denied, op == 0);
+        (int index, init, merkle) = insert(0, 0, merkle);
+        save_data(init, merkle, fee_info, nullifiers);
+        return ();
+    }
+
+
+    if (op == op::deposit) {
+        int fee_amount = POOL_SIZE * 2 / 100; ;; 2% fee
+        throw_unless(error::fund, msg_value > POOL_SIZE + fee_amount + const::tx_fee);
+
+        cell commitment = in_msg_body~load_ref();
+        slice commitment_slice = commitment.begin_parse();
+        int commitment_value = commitment_slice~load_uint(256);
+        send_ton(fee_recepient, fee_amount);
+
+
+        (int index, init, merkle) = insert(commitment_value, 1, merkle);
+
+        emit_log_simple(op::deposit, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
+        save_data(init, merkle, fee_info, nullifiers);
+        return ();
+    }
+    if (op == op::withdraw) {
+
+        ;;
+        ;;
+        ;; Verifying Key constants
+        ;;
+        ;;
+
+
+        ;; zk verification code goes here
+
+        ;;
+        ;;
+        ;; Proof inputs
+        ;;
+        ;;
+        cell withdraw_info = in_msg_body~load_ref();
+        slice withdraw_info_slice1 = withdraw_info.begin_parse();
+        int root = withdraw_info_slice1~load_uint(256);
+        int nullifier_hash = withdraw_info_slice1~load_uint(256);
+        int fee_coef = withdraw_info_slice1~load_uint(10);
+        cell addresses = withdraw_info_slice1~load_ref();
+        slice addresses_slice = addresses.begin_parse();
+        slice recipient = addresses_slice~load_msg_addr();
+
+        cell A_cell = withdraw_info_slice1~load_ref();
+        cell B_cell = withdraw_info_slice1~load_ref();
+        cell C_cell = withdraw_info_slice1~load_ref();
+        slice A = A_cell.begin_parse();
+        slice B = B_cell.begin_parse();
+        slice C = C_cell.begin_parse();
+        slice vk_x = IC0;
+        throw_unless(error::verify_failed_input, root < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
+
+
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, nullifier_hash));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, recipient.preload_uint(256)));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, fee_coef));
+
+
+        throw_unless(error::verify_failed_fee, fee_coef < 1000);
+        throw_unless(error::verify_failed_root, is_known_root(root));
+        throw_unless(error::verify_failed_double_spend, is_unknown_nullifier(nullifier_hash, nullifiers));
+
+        slice neg_a = bls_g1_negate(A);
+        int success = bls_pairing_check(neg_a,
+                B,
+                alf1,
+                beta2,
+                vk_x,
+                gamma2,
+                C,
+                delta2,
+                4);
+        ifnot (success){
+            throw(error::verify_failed);
+        }
+
+        nullifiers~udict_set(256, nullifier_hash, begin_cell().end_cell().begin_parse());
+        int fee_amount = fee_coef * POOL_SIZE / 1000;
+        send_ton(recipient, POOL_SIZE - fee_amount);
+        send_ton(sender_address, fee_amount);
+        save_data(init, merkle, fee_info, nullifiers);
+        return();
+
+
+    }
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+

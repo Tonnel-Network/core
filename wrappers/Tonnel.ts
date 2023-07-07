@@ -95,7 +95,6 @@ export class Tonnel implements Contract {
       root: bigint;
       nullifierHash: bigint;
       recipient: Address;
-      relayer: Address;
       fee: bigint;
     }
   ) {
@@ -111,8 +110,7 @@ export class Tonnel implements Contract {
             .storeUint(opts.nullifierHash, 256)
             .storeUint(opts.fee, 10)
             .storeRef(
-              beginCell().storeAddress(opts.recipient)
-                .storeAddress(opts.relayer).endCell()
+              beginCell().storeAddress(opts.recipient).endCell()
             ).storeRef(opts.a).storeRef(opts.b)
             .storeRef(opts.c)
             .endCell()

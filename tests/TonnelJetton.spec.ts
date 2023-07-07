@@ -20,7 +20,7 @@ const pool_size = 2;
 const deposit_fee = 0.95;
 
 
-describe('Tonnel', () => {
+describe('TonnelJetton', () => {
   let code: Cell;
   let codeWallet: Cell;
   let codeMaster: Cell;
@@ -66,7 +66,6 @@ describe('Tonnel', () => {
       )
     );
 
-
     const deployResult = await tonnel.sendDeploy(owner.getSender(), toNano('0.05'));
 
     expect(deployResult.transactions).toHaveTransaction({
@@ -93,6 +92,7 @@ describe('Tonnel', () => {
       to: jettonMinter.address,
       success: true,
     });
+
   });
 
   async function merkleInitialize() {
@@ -244,6 +244,7 @@ describe('Tonnel', () => {
     const nullifier = toBigIntLE(randomBuf2);
     const secret = toBigIntLE(randomBuf);
     const commitment = Sha256(secret.toString(), nullifier.toString());
+    tree.insert(commitment);
 
 
     const jettonWalletDepositor = await blockchain.openContract(
@@ -360,7 +361,6 @@ describe('Tonnel', () => {
       nullifierHash: Sha256(nullifier.toString(), nullifier.toString()),
       fee: 10,
       recipient: cell_address_sender.beginParse().loadUintBig(256),
-      relayer: cell_address_owner.beginParse().loadUintBig(256),
 
       pathElements: merkleProof.pathElements,
       pathIndices: merkleProof.pathIndices,
@@ -372,20 +372,19 @@ describe('Tonnel', () => {
     const B_x = proof.pi_b[0].map((num: string) => BigInt(num))
     const B_y  = proof.pi_b[1].map((num: string) => BigInt(num))
 
-    const withdrawResult = await tonnel.sendWithdraw(sender.getSender(), {
+    const withdrawResult = await tonnel.sendWithdraw(owner.getSender(), {
       value: toNano((deposit_fee + pool_size * (1 + fee)).toString()),
       root: BigInt(publicSignals[0]),
       nullifierHash: BigInt(publicSignals[1]),
       recipient: sender.address,
-      fee: BigInt(publicSignals[4]),
-      relayer: owner.address,
+      fee: BigInt(publicSignals[3]),
       a: parseG1Func(proof.pi_a.slice(0,2).map((num: string ) => BigInt(num))),
       b: parseG2Func(B_x[0], B_x[1], B_y),
       c: parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num))),
     });
 
     expect(withdrawResult.transactions).toHaveTransaction({
-      from: sender.address,
+      from: owner.address,
       to: tonnel.address,
       success: true,
     });
