@@ -637,6 +637,9 @@ int bls_is_ingroup_g1(slice x) asm "BLS_G1_INGROUP";
 ;; int bls_is_ingroup_g2(slice x) asm "BLS_G2_INGROUP";
 slice zero_g1() asm "BLS_G1_ZERO";
 slice zero_g2() asm "BLS_G2_ZERO";
+
+int builder_null?(builder b) asm "ISNULL";
+
 ;; slice bls_map_to_g1(slice f) asm "BLS_MAP_TO_G1";
 ;; int bls_verify(slice pk, slice msg, slice sgn) asm "BLS_VERIFY";
 

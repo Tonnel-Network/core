@@ -60,7 +60,7 @@
     }
     slice sender_address = cs~load_msg_addr();
 
-    (cell states, cell jetton_info) = load_data(); ;; here we populate the storage variables
+    (cell states, cell jetton_info, cell admin_info) = load_data(); ;; here we populate the storage variables
 
 
     int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
@@ -89,7 +89,7 @@
 
 
         emit_log_simple(op::stake_TONNEL(), begin_cell().store_coins(send_amount).end_cell().begin_parse());
-        save_data(states, jetton_info);
+        save_data(states, jetton_info, admin_info);
         return ();
     }
     if(op == op::stake_TON()) {
@@ -106,7 +106,7 @@
                 begin_cell().store_coins(jettonAmount).store_coins(tonAmount + amount_to_stake).end_cell().begin_parse());
 
         emit_log_simple(op::stake_TON(), begin_cell().store_coins(amount_to_stake).end_cell().begin_parse());
-        save_data(states, jetton_info);
+        save_data(states, jetton_info, admin_info);
         return ();
     }
     if(op == op::withdraw_TON()) {
@@ -126,7 +126,7 @@
 
         emit_log_simple(op::withdraw_TON(), begin_cell().store_coins(amount_to_withdraw).end_cell().begin_parse());
 
-        save_data(states, jetton_info);
+        save_data(states, jetton_info, admin_info);
         return ();
     }
     if (op == op::withdraw_TONNEL()) {
@@ -148,7 +148,18 @@
                 begin_cell().store_coins(jettonAmount - amount_to_withdraw).store_coins(tonAmount).end_cell().begin_parse());
 
         emit_log_simple(op::withdraw_TONNEL(), begin_cell().store_coins(amount_to_withdraw).end_cell().begin_parse());
-        save_data(states, jetton_info);
+        save_data(states, jetton_info, admin_info);
+        return ();
+    }
+
+    if(op == op::set_TONNEL()){
+        slice admin_info_slice = admin_info.begin_parse();
+        slice admin_address = admin_info_slice~load_msg_addr();
+        throw_unless(error::not_admin, equal_slices(sender_address, admin_address));
+        slice jetton_master_address = in_msg_body~load_msg_addr();
+        cell JETTON_BYTECODE = in_msg_body~load_ref();
+        jetton_info = begin_cell().store_slice(jetton_master_address).store_ref(JETTON_BYTECODE).end_cell();
+        save_data(states, jetton_info, admin_info);
         return ();
     }
     throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw

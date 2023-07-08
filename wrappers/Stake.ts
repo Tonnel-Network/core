@@ -12,17 +12,19 @@ import {
 export type StakeConfig = {
   jettonMinterAddress: Address;
   jettonWalletBytecode: Cell;
+  admin: Address;
 };
 
 export function tonnelConfigToCell(config: StakeConfig): Cell {
 
-  return beginCell().storeDict(null).storeRef(beginCell().storeAddress(config.jettonMinterAddress).storeRef(config.jettonWalletBytecode).endCell()).endCell();
+  return beginCell().storeDict(null).storeRef(beginCell().storeAddress(config.jettonMinterAddress).storeRef(config.jettonWalletBytecode).endCell()).storeRef(beginCell().storeAddress(config.admin).endCell()).endCell();
 }
 export const Opcodes = {
   stake_TON: 777,
   stake_TONNEL: 778,
   withdraw_TON: 779,
   withdraw_TONNEL: 780,
+  set_TONNEL: 781,
 };
 // const error::not_staked = 700;
 // const error::not_enough = 701;
@@ -107,6 +109,28 @@ export class Stake implements Contract {
         .storeUint(Opcodes.withdraw_TONNEL, 32)
         .storeUint(opts.queryID ?? 0, 64)
         .storeCoins(opts.amount)
+        .endCell(),
+    });
+  }
+
+  async sendSetTonnel(
+    provider: ContractProvider,
+    via: Sender,
+    opts: {
+      value: bigint;
+      queryID?: number;
+      jettonMasterAddress: Address;
+      jettonWalletBytecode: Cell;
+    }
+  ) {
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell()
+        .storeUint(Opcodes.set_TONNEL, 32)
+        .storeUint(opts.queryID ?? 0, 64)
+        .storeAddress(opts.jettonMasterAddress)
+        .storeRef(opts.jettonWalletBytecode)
         .endCell(),
     });
   }

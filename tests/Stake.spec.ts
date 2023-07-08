@@ -48,6 +48,7 @@ describe('Stake', () => {
         {
           jettonMinterAddress: jettonMinter.address,
           jettonWalletBytecode: codeWallet,
+          admin: owner.address,
         },
         code
       )
@@ -75,6 +76,19 @@ describe('Stake', () => {
     expect(mintResult.transactions).toHaveTransaction({
       from: owner.address,
       to: jettonMinter.address,
+      success: true,
+    });
+
+    const setTonnelResult = await stake.sendSetTonnel(owner.getSender(), {
+      queryID: 1,
+      value: toNano('0.02'),
+      jettonWalletBytecode: codeWallet,
+      jettonMasterAddress: jettonMinter.address,
+    });
+
+    expect(setTonnelResult.transactions).toHaveTransaction({
+      from: owner.address,
+      to: stake.address,
       success: true,
     });
   });
