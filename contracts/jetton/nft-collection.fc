@@ -42,7 +42,16 @@
     } until (number == 0);
     return (len, value);
 }
+() send_ton(slice recepient, int amount) impure inline {
+    var msg = begin_cell()
+            .store_uint(0x10, 6)
+            .store_slice(recepient)
+            .store_grams(amount)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .end_cell();
+    send_raw_message(msg, 1);
 
+}
 cell calculate_nft_item_state_init(int item_index, cell nft_item_code) {
     cell data = begin_cell().store_uint(item_index, 64).store_slice(my_address()).end_cell();
     return begin_cell().store_uint(0, 2).store_dict(nft_item_code).store_dict(data).store_uint(0, 1).end_cell();
@@ -124,8 +133,9 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         }
         int amount_to_fwd = in_msg_body~load_coins();
         throw_unless(error::not_enough(), msg_value >= price + amount_to_fwd);
-
+        send_ton(owner_address, price);
         deploy_nft_item(next_item_index, nft_item_code, amount_to_fwd, in_msg_body~load_ref());
+
         next_item_index += 1;
         cell new_mint_info = begin_cell()
                 .store_coins(price)
