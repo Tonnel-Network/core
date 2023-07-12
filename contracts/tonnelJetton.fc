@@ -3,6 +3,9 @@
 #include "jetton/imports/op-codes.fc";
 
 () send_jetton(slice recepient, int amount, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
+    if (amount == 0) {
+        return ();
+    }
     slice jetton_wallet = calculate_user_jetton_wallet_address(my_address(), JETTON_MASTER_ADDRESS, JETTON_BYTE_CODE);
 
     var msg = begin_cell()
@@ -14,10 +17,38 @@
             .store_uint(0, 64)
             .store_coins(amount)
             .store_slice(recepient)
-            .store_uint(0,2)
+            .store_uint(0, 2)
             .store_uint(0, 1)
             .store_coins(0)
             .store_uint(0, 1);
+    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
+
+}
+
+
+() mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
+
+    var msg = begin_cell()
+            .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+            .store_slice(JETTON_MASTER_ADDRESS)
+            .store_coins(const::tx_fee_send_jetton)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(op::mint(), 32)
+            .store_uint(0, 64)
+            .store_slice(recepient)
+            .store_coins(20000000)
+            .store_ref(
+                    begin_cell().store_uint(op::internal_transfer(), 32)
+                            .store_uint(0, 64)
+                            .store_coins(amount)
+                            .store_slice(JETTON_MASTER_ADDRESS)
+                            .store_uint(0, 200)
+                            .store_uint(0, 67)
+                            .store_coins(0)
+                            .store_uint(0, 1)
+                            .end_cell()
+            );
+
     send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
 
 }
@@ -52,7 +83,11 @@
     (int init, cell merkle, cell fee_info, cell nullifiers, cell jetton_info) = load_data(); ;; here we populate the storage variables
     slice fee_info_slice = fee_info.begin_parse();
     slice fee_recepient = fee_info_slice~load_msg_addr();
-    int fee_percent = fee_info_slice~load_uint(8);
+    int fee_percent = fee_info_slice~load_uint(10);
+    slice tonnel_jetton_master_address = fee_info_slice~load_msg_addr();
+    int tonnel_mint_amount_deposit = fee_info_slice~load_uint(32); ;; amount of jetton to mint for depositor, it should be multiplied by 10^9
+    int tonnel_mint_amount_relayer = fee_info_slice~load_uint(32); ;; amount of jetton to mint for relayers, it should be multiplied by 10^9
+
     if (init < 20) { ;; init merkle tree
         (init, merkle) = construct_tree(init, merkle);
         save_data(init, merkle, fee_info, nullifiers, jetton_info);
@@ -61,7 +96,7 @@
     int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
     int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
     if(init == 21) { ;; continue merkle tree operation
-        if(op == op::transfer_notification()){
+        if(op == op::transfer_notification()) {
             int send_amount = in_msg_body~load_coins(); ;; Jettons send
 
             slice jetton_info_slice = jetton_info.begin_parse();
@@ -88,12 +123,12 @@
         slice jetton_info_slice = jetton_info.begin_parse();
         slice jetton_master_address = jetton_info_slice~load_msg_addr();
         cell JETTON_BYTECODE = jetton_info_slice~load_ref();
-        int fee_amount = POOL_SIZE * fee_percent / 100; ;; 2% fee
+        int fee_amount = POOL_SIZE * fee_percent / 1000; ;; 2% fee
         throw_unless(error::jetton_sender, equal_slices(sender_address, calculate_user_jetton_wallet_address(my_address(), jetton_master_address, JETTON_BYTECODE)));
         throw_unless(error::fund_fee, msg_value > const::tx_fee + const::tx_fee_send_jetton);
-        slice origin_sender = in_msg_body~load_msg_addr(); ;; transfer origin address (not used)
+        slice origin_sender = in_msg_body~load_msg_addr(); ;; transfer origin address
 
-        if (send_amount != POOL_SIZE + fee_amount){
+        if (send_amount != POOL_SIZE + fee_amount) {
             send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
             return ();
 
@@ -107,6 +142,7 @@
         int commitment_value = commitment_slice~load_uint(256);
 
         send_jetton(fee_recepient, fee_amount, jetton_master_address, JETTON_BYTECODE);
+        mint_tonnel(origin_sender, tonnel_mint_amount_deposit * 1000000000, tonnel_jetton_master_address);
 
 
         (int index, init, merkle) = insert(commitment_value, 1, merkle);
@@ -124,15 +160,15 @@
         ;;
 
 
-        slice alf1 =  begin_cell().store_uint(161660088803638, 48).store_uint(174915596092591, 48).store_uint(103625742955285, 48).store_uint(45033598540138, 48).store_uint(228788439962206, 48).store_uint(278692321121119, 48).store_uint(106161774861813, 48).store_uint(150828133086774, 48).end_cell().begin_parse();
-        slice IC0 =  begin_cell().store_uint(152168983986473, 48).store_uint(221619329025907, 48).store_uint(26058364908651, 48).store_uint(35604054704562, 48).store_uint(57203835768825, 48).store_uint(23557499860187, 48).store_uint(42609274589494, 48).store_uint(108382761734656, 48).end_cell().begin_parse();
-        slice IC1 =  begin_cell().store_uint(164996640165502, 48).store_uint(85052392486217, 48).store_uint(230787547593235, 48).store_uint(265167565426289, 48).store_uint(191597895479334, 48).store_uint(70185006854731, 48).store_uint(194140300250582, 48).store_uint(264120215580019, 48).end_cell().begin_parse();
-        slice IC2 =  begin_cell().store_uint(196592908685427, 48).store_uint(171795943161434, 48).store_uint(26305700148551, 48).store_uint(242673637058235, 48).store_uint(153868280733666, 48).store_uint(278144529944446, 48).store_uint(179756494421439, 48).store_uint(19033129735694, 48).end_cell().begin_parse();
-        slice IC3 =  begin_cell().store_uint(149397898625681, 48).store_uint(183274318457704, 48).store_uint(122348135847249, 48).store_uint(180333610873960, 48).store_uint(38633688436053, 48).store_uint(14924843828286, 48).store_uint(142397979274840, 48).store_uint(206932104524486, 48).end_cell().begin_parse();
-        slice IC4 =  begin_cell().store_uint(149985373542668, 48).store_uint(170418859049460, 48).store_uint(271825152980378, 48).store_uint(239412532914807, 48).store_uint(39615645556313, 48).store_uint(216566621606908, 48).store_uint(160488800591702, 48).store_uint(238837834336217, 48).end_cell().begin_parse();
-        slice beta2 =  begin_cell().store_uint(40511421779752075222938674879, 96).store_uint(46553825265619401190767531056, 96).store_uint(74130811668289816077621761178, 96).store_uint(13483243887395268113068016732, 96).store_uint(7772804059625168115464635933, 96).store_uint(54815215219919490460882481977, 96).store_uint(5420380133122972551295531159, 96).store_uint(37637895364775297944481669936, 96).end_cell().begin_parse();
-        slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
-        slice delta2 =  begin_cell().store_uint(41927526620200715382934117118, 96).store_uint(33003720790981973342161950360, 96).store_uint(29172541997772449919163419697, 96).store_uint(42084828233699416556951173819, 96).store_uint(2487209597368882800290830367, 96).store_uint(13746812365516576600981842744, 96).store_uint(47485423923078880599824467725, 96).store_uint(50383785865280499143808869142, 96).end_cell().begin_parse();
+        slice alf1 = begin_cell().store_uint(161660088803638, 48).store_uint(174915596092591, 48).store_uint(103625742955285, 48).store_uint(45033598540138, 48).store_uint(228788439962206, 48).store_uint(278692321121119, 48).store_uint(106161774861813, 48).store_uint(150828133086774, 48).end_cell().begin_parse();
+        slice IC0 = begin_cell().store_uint(152168983986473, 48).store_uint(221619329025907, 48).store_uint(26058364908651, 48).store_uint(35604054704562, 48).store_uint(57203835768825, 48).store_uint(23557499860187, 48).store_uint(42609274589494, 48).store_uint(108382761734656, 48).end_cell().begin_parse();
+        slice IC1 = begin_cell().store_uint(164996640165502, 48).store_uint(85052392486217, 48).store_uint(230787547593235, 48).store_uint(265167565426289, 48).store_uint(191597895479334, 48).store_uint(70185006854731, 48).store_uint(194140300250582, 48).store_uint(264120215580019, 48).end_cell().begin_parse();
+        slice IC2 = begin_cell().store_uint(196592908685427, 48).store_uint(171795943161434, 48).store_uint(26305700148551, 48).store_uint(242673637058235, 48).store_uint(153868280733666, 48).store_uint(278144529944446, 48).store_uint(179756494421439, 48).store_uint(19033129735694, 48).end_cell().begin_parse();
+        slice IC3 = begin_cell().store_uint(149397898625681, 48).store_uint(183274318457704, 48).store_uint(122348135847249, 48).store_uint(180333610873960, 48).store_uint(38633688436053, 48).store_uint(14924843828286, 48).store_uint(142397979274840, 48).store_uint(206932104524486, 48).end_cell().begin_parse();
+        slice IC4 = begin_cell().store_uint(149985373542668, 48).store_uint(170418859049460, 48).store_uint(271825152980378, 48).store_uint(239412532914807, 48).store_uint(39615645556313, 48).store_uint(216566621606908, 48).store_uint(160488800591702, 48).store_uint(238837834336217, 48).end_cell().begin_parse();
+        slice beta2 = begin_cell().store_uint(40511421779752075222938674879, 96).store_uint(46553825265619401190767531056, 96).store_uint(74130811668289816077621761178, 96).store_uint(13483243887395268113068016732, 96).store_uint(7772804059625168115464635933, 96).store_uint(54815215219919490460882481977, 96).store_uint(5420380133122972551295531159, 96).store_uint(37637895364775297944481669936, 96).end_cell().begin_parse();
+        slice gamma2 = begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+        slice delta2 = begin_cell().store_uint(41927526620200715382934117118, 96).store_uint(33003720790981973342161950360, 96).store_uint(29172541997772449919163419697, 96).store_uint(42084828233699416556951173819, 96).store_uint(2487209597368882800290830367, 96).store_uint(13746812365516576600981842744, 96).store_uint(47485423923078880599824467725, 96).store_uint(50383785865280499143808869142, 96).end_cell().begin_parse();
 
         ;;
         ;;
@@ -177,7 +213,7 @@
                 C,
                 delta2,
                 4);
-        ifnot (success){
+        ifnot (success) {
             throw(error::verify_failed);
         }
 
@@ -190,8 +226,10 @@
 
         send_jetton(recipient, POOL_SIZE - fee_amount, jetton_master_address, JETTON_BYTECODE);
         send_jetton(sender_address, fee_amount, jetton_master_address, JETTON_BYTECODE);
+        mint_tonnel(sender_address, tonnel_mint_amount_relayer * 1000000000, tonnel_jetton_master_address);
+
         save_data(init, merkle, fee_info, nullifiers, jetton_info);
-        return();
+        return ();
 
 
     }

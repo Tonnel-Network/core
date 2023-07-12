@@ -13,15 +13,32 @@ export type TonnelJettonConfig = {
   ownerAddress: Address;
   jettonMinterAddress: Address;
   jettonWalletBytecode: Cell;
+  tonnelJettonAddress: Address;
+  depositorTonnelMint: number;
+  relayerTonnelMint: number;
 };
 
 export function tonnelConfigToCell(config: TonnelJettonConfig): Cell {
 
-  return beginCell().storeUint(0, 8).storeRef(beginCell().endCell()).storeRef(beginCell().storeAddress(config.ownerAddress).storeUint(2,8).endCell()).
-  storeDict(null).storeRef(
-    beginCell().storeAddress(config.jettonMinterAddress).storeRef(config.jettonWalletBytecode).endCell()
+  return beginCell().storeUint(0, 8)
+    .storeRef(beginCell().endCell())
+    .storeRef(
+      beginCell()
+        .storeAddress(config.ownerAddress)
+        .storeUint(20, 10)
+        .storeAddress(config.tonnelJettonAddress)
+        .storeUint(config.depositorTonnelMint, 32)
+        .storeUint(config.relayerTonnelMint, 32)
+        .endCell()
+    ).storeDict(null)
+    .storeRef(
+      beginCell()
+        .storeAddress(config.jettonMinterAddress)
+        .storeRef(config.jettonWalletBytecode)
+        .endCell()
   ).endCell();
 }
+
 export const Opcodes = {
   deposit: 0x888,
   continue: 0x00,

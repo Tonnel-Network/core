@@ -30,7 +30,7 @@ describe('Stake', () => {
 
     jettonMinter = blockchain.openContract(JettonMinter.createFromConfig({
       adminAddress: owner.address,
-      content: beginCell().endCell(),
+      content: "",
       jettonWalletCode: codeWallet
     }, codeMaster));
 

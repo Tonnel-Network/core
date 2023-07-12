@@ -6,7 +6,7 @@ import {MerkleTree, Sha256} from "../utils/merkleTree";
 import {genProofArgs, rbuffer, toBigIntLE} from "../utils/circuit";
 import path from "path";
 // @ts-ignore
-import { groth16 } from "snarkjs";
+import {groth16} from "snarkjs";
 import {JettonMinter} from "../wrappers/JettonMinter";
 import {ERRORS, TonnelJetton} from "../wrappers/TonnelJetton";
 import {JettonWallet} from "../wrappers/JettonWallet";
@@ -35,24 +35,39 @@ describe('TonnelJetton', () => {
   let blockchain: Blockchain;
   let tonnel: SandboxContract<TonnelJetton>;
   let jettonMinter: SandboxContract<JettonMinter>;
+  let tonnelJettonMaster: SandboxContract<JettonMinter>;
   let owner: SandboxContract<TreasuryContract>;
   beforeEach(async () => {
     blockchain = await Blockchain.create();
     owner = await blockchain.treasury('owner');
+    let owner2 = await blockchain.treasury('owner2');
     jettonMinter = blockchain.openContract(JettonMinter.createFromConfig({
       adminAddress: (await blockchain.treasury('owner')).address,
-      content: beginCell().endCell(),
+      content: "",
       jettonWalletCode: codeWallet
     }, codeMaster));
-    const depositSender = await blockchain.treasury('sender');
-
-    const deployJettonResult = await jettonMinter.sendDeploy(owner.getSender(), toNano('0.05'));
+    let deployJettonResult = await jettonMinter.sendDeploy(owner.getSender(), toNano('0.05'));
     expect(deployJettonResult.transactions).toHaveTransaction({
       from: owner.address,
       to: jettonMinter.address,
       deploy: true,
       success: true,
     });
+
+    tonnelJettonMaster = blockchain.openContract(JettonMinter.createFromConfig({
+      adminAddress: owner2.address,
+      content: "",
+      jettonWalletCode: codeWallet
+    }, codeMaster));
+
+    deployJettonResult = await tonnelJettonMaster.sendDeploy(owner.getSender(), toNano('0.05'));
+    expect(deployJettonResult.transactions).toHaveTransaction({
+      from: owner.address,
+      to: tonnelJettonMaster.address,
+      deploy: true,
+      success: true,
+    });
+
 
 
     tonnel = blockchain.openContract(
@@ -61,10 +76,20 @@ describe('TonnelJetton', () => {
           ownerAddress: owner.address,
           jettonMinterAddress: jettonMinter.address,
           jettonWalletBytecode: codeWallet,
+          tonnelJettonAddress: tonnelJettonMaster.address,
+          relayerTonnelMint: 50,
+          depositorTonnelMint: 100
         },
         code
       )
     );
+
+    await tonnelJettonMaster.sendMintAccess(owner2.getSender(),{
+      value: toNano('0.02'),
+      queryId: 0,
+      mintAccess: tonnel.address
+    })
+
 
     const deployResult = await tonnel.sendDeploy(owner.getSender(), toNano('0.05'));
 
@@ -131,7 +156,6 @@ describe('TonnelJetton', () => {
     expect(BigInt(tree.root())).toEqual(rootInit);
 
 
-
     const randomBuf = rbuffer(31);
     const randomBuf2 = rbuffer(31);
     const nullifier = toBigIntLE(randomBuf2);
@@ -148,7 +172,7 @@ describe('TonnelJetton', () => {
     const jettonWalletTonnelContract = await blockchain.openContract(
       JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(tonnel.address)))
     const jettonWalletOwner = await blockchain.openContract(
-          JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(owner.address)))
+      JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(owner.address)))
 
     const depositResult = await jettonWalletDepositor.sendTransfer(sender.getSender(), {
       value: toNano((deposit_fee + 0.07).toString()),
@@ -156,7 +180,7 @@ describe('TonnelJetton', () => {
       queryId: 2,
       fwdAmount: toNano(deposit_fee.toString()),
       jettonAmount: toNano((pool_size + fee * pool_size).toString()),
-      fwdPayload: beginCell().storeUint(BigInt(commitment),256).endCell()
+      fwdPayload: beginCell().storeUint(BigInt(commitment), 256).endCell()
     });
 
     expect(depositResult.transactions).toHaveTransaction({
@@ -170,6 +194,29 @@ describe('TonnelJetton', () => {
       to: jettonWalletOwner.address,
       success: true,
     });
+
+
+
+
+    expect(depositResult.transactions).toHaveTransaction({
+      from: tonnel.address,
+      to: tonnelJettonMaster.address,
+      success: true,
+    })
+    const jettonWalletDepositorContract = await blockchain.openContract(
+      JettonWallet.createFromAddress(await tonnelJettonMaster.getWalletAddress(sender.address)))
+    expect(depositResult.transactions).toHaveTransaction({
+      from: tonnelJettonMaster.address,
+      to: jettonWalletDepositorContract.address,
+      success: true,
+    })
+
+
+
+    expect(await jettonWalletDepositorContract.getBalance()).toEqual(toNano(100))
+
+
+
 
     expect(await jettonWalletTonnelContract.getBalance()).toEqual(toNano(pool_size))
     tree.insert(commitment);
@@ -187,7 +234,6 @@ describe('TonnelJetton', () => {
     expect(BigInt(tree.root())).toEqual(rootAfter);
 
   });
-
 
 
   it('should init Merkle and then revert on invalid deposit', async () => {
@@ -219,8 +265,8 @@ describe('TonnelJetton', () => {
       toAddress: tonnel.address,
       queryId: 2,
       fwdAmount: toNano(deposit_fee.toString()),
-      jettonAmount: toNano((pool_size ).toString()), //not paying fee
-      fwdPayload: beginCell().storeUint(BigInt(commitment),256).endCell()
+      jettonAmount: toNano((pool_size).toString()), //not paying fee
+      fwdPayload: beginCell().storeUint(BigInt(commitment), 256).endCell()
     });
 
     expect(await jettonWalletTonnelContract.getBalance()).toEqual(toNano("0")) // should not hold users funds in revert scenario
@@ -261,7 +307,7 @@ describe('TonnelJetton', () => {
       queryId: 2,
       fwdAmount: toNano(deposit_fee.toString()),
       jettonAmount: toNano((pool_size * (1 + fee)).toString()), //not paying fee
-      fwdPayload: beginCell().storeUint(BigInt(commitment),256).endCell()
+      fwdPayload: beginCell().storeUint(BigInt(commitment), 256).endCell()
     });
 
     const depositResult2 = await jettonWalletDepositor.sendTransfer(sender.getSender(), {
@@ -270,7 +316,7 @@ describe('TonnelJetton', () => {
       queryId: 2,
       fwdAmount: toNano(deposit_fee.toString()),
       jettonAmount: toNano((pool_size * (1 + fee)).toString()), //not paying fee
-      fwdPayload: beginCell().storeUint(BigInt(commitment),256).endCell()
+      fwdPayload: beginCell().storeUint(BigInt(commitment), 256).endCell()
     });
 
     expect(await jettonWalletTonnelContract.getBalance()).toEqual(toNano("2")) // should not hold users funds in revert scenario
@@ -286,6 +332,23 @@ describe('TonnelJetton', () => {
     });
     const rootAfter = await tonnel.getLastRoot();
     expect(BigInt(tree.root())).toEqual(rootAfter);
+
+    expect(depositResult1.transactions).toHaveTransaction({
+      from: tonnel.address,
+      to: tonnelJettonMaster.address,
+      success: true,
+    })
+    const jettonWalletDepositorContract = await blockchain.openContract(
+      JettonWallet.createFromAddress(await tonnelJettonMaster.getWalletAddress(sender.address)))
+    expect(depositResult1.transactions).toHaveTransaction({
+      from: tonnelJettonMaster.address,
+      to: jettonWalletDepositorContract.address,
+      success: true,
+    })
+
+
+
+    expect(await jettonWalletDepositorContract.getBalance()).toEqual(toNano(100))
 
   });
 
@@ -307,7 +370,6 @@ describe('TonnelJetton', () => {
     const commitment = Sha256(secret.toString(), nullifier.toString());
 
 
-
     const jettonWalletDepositor = await blockchain.openContract(
       JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(sender.address)))
 
@@ -322,7 +384,7 @@ describe('TonnelJetton', () => {
       queryId: 2,
       fwdAmount: toNano(deposit_fee.toString()),
       jettonAmount: toNano((pool_size + fee * pool_size).toString()),
-      fwdPayload: beginCell().storeUint(BigInt(commitment),256).endCell()
+      fwdPayload: beginCell().storeUint(BigInt(commitment), 256).endCell()
     });
 
     expect(depositResult.transactions).toHaveTransaction({
@@ -338,6 +400,22 @@ describe('TonnelJetton', () => {
     });
 
     expect(await jettonWalletTonnelContract.getBalance()).toEqual(toNano(pool_size))
+
+
+    expect(depositResult.transactions).toHaveTransaction({
+      from: tonnel.address,
+      to: tonnelJettonMaster.address,
+      success: true,
+    })
+    const jettonWalletDepositorContract = await blockchain.openContract(
+      JettonWallet.createFromAddress(await tonnelJettonMaster.getWalletAddress(sender.address)))
+    expect(depositResult.transactions).toHaveTransaction({
+      from: tonnelJettonMaster.address,
+      to: jettonWalletDepositorContract.address,
+      success: true,
+    })
+
+    expect(await jettonWalletDepositorContract.getBalance()).toEqual(toNano(100))
 
     tree.insert(commitment);
     const merkleProof = tree.proof(0);
@@ -370,7 +448,7 @@ describe('TonnelJetton', () => {
     let {proof, publicSignals} = await groth16.fullProve(input, wasmPath, zkeyPath);
 
     const B_x = proof.pi_b[0].map((num: string) => BigInt(num))
-    const B_y  = proof.pi_b[1].map((num: string) => BigInt(num))
+    const B_y = proof.pi_b[1].map((num: string) => BigInt(num))
 
     const withdrawResult = await tonnel.sendWithdraw(owner.getSender(), {
       value: toNano((deposit_fee + pool_size * (1 + fee)).toString()),
@@ -378,9 +456,9 @@ describe('TonnelJetton', () => {
       nullifierHash: BigInt(publicSignals[1]),
       recipient: sender.address,
       fee: BigInt(publicSignals[3]),
-      a: parseG1Func(proof.pi_a.slice(0,2).map((num: string ) => BigInt(num))),
+      a: parseG1Func(proof.pi_a.slice(0, 2).map((num: string) => BigInt(num))),
       b: parseG2Func(B_x[0], B_x[1], B_y),
-      c: parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num))),
+      c: parseG1Func(proof.pi_c.slice(0, 2).map((num: string) => BigInt(num))),
     });
 
     expect(withdrawResult.transactions).toHaveTransaction({
@@ -402,6 +480,21 @@ describe('TonnelJetton', () => {
     expect(await jettonWalletTonnelContract.getBalance()).toEqual(toNano('0'))
     expect(await jettonWalletDepositor.getBalance()).toEqual(toNano('9.94'))
     expect(await jettonWalletOwner.getBalance()).toEqual(toNano('0.06'))
+
+    expect(withdrawResult.transactions).toHaveTransaction({
+      from: tonnel.address,
+      to: tonnelJettonMaster.address,
+      success: true,
+    })
+    const jettonWalletRelayerContract = await blockchain.openContract(
+      JettonWallet.createFromAddress(await tonnelJettonMaster.getWalletAddress(owner.address)))
+    expect(withdrawResult.transactions).toHaveTransaction({
+      from: tonnelJettonMaster.address,
+      to: jettonWalletRelayerContract.address,
+      success: true,
+    })
+
+    expect(await jettonWalletRelayerContract.getBalance()).toEqual(toNano(50))
 
 
   }, 500000);

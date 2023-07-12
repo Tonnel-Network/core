@@ -205,7 +205,7 @@ const const::tx_fee = 900000000; ;; 0.9 TON
         return 0;
     }
 
-    (int init, cell merkle_cell, _, _) = load_data();
+    (int init, cell merkle_cell, _, _, _) = load_data();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
     merkle~load_uint(32);
@@ -247,7 +247,7 @@ const const::tx_fee = 900000000; ;; 0.9 TON
 }
 
 (int) get_last_root() method_id {
-    (int init, cell merkle_cell, _, _) = load_data();
+    (int init, cell merkle_cell, _, _, _) = load_data();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
     merkle~load_uint(32);

@@ -77,15 +77,15 @@ describe('NFTCollection', () => {
     const owner = await blockchain.treasury('owner');
     const transferDest = await blockchain.treasury('transferDest');
     const changePriceResult = await nftCollection.sendChangePrice(owner.getSender(), {
-      value: toNano('0.02')
+      value: toNano('0.02'),
+      many: 0,
+      price: 0
     });
     expect(changePriceResult.transactions).toHaveTransaction({
       from: owner.address,
       to: nftCollection.address,
       success: true
     });
-    // non allowed mint
-
     let mintResult = await nftCollection.sendMint(owner.getSender(), {
       toAddress: owner.address,
       value: toNano('0.07')
@@ -94,7 +94,12 @@ describe('NFTCollection', () => {
       from: owner.address,
       to: nftCollection.address,
       success: false,
-      exitCode: 708
+      exitCode: 104
+    });
+    await nftCollection.sendChangePrice(owner.getSender(), {
+      value: toNano('0.02'),
+      many: 5,
+      price: 1
     });
     for (let i = 0; i < 5; i++) {
       mintResult = await nftCollection.sendMint(owner.getSender(), {

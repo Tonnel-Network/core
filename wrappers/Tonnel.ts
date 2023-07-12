@@ -11,13 +11,27 @@ import {
 
 export type TonnelConfig = {
   ownerAddress: Address;
+  tonnelJettonAddress: Address;
+  depositorTonnelMint: number;
+  relayerTonnelMint: number;
 };
 
 export function tonnelConfigToCell(config: TonnelConfig): Cell {
 
-  return beginCell().storeUint(0, 8).storeRef(beginCell().endCell()).storeRef(beginCell().storeAddress(config.ownerAddress).endCell()).
-  storeDict(null).endCell();
+  return beginCell().storeUint(0, 8)
+    .storeRef(beginCell().endCell())
+    .storeRef(beginCell().storeAddress(config.ownerAddress).storeUint(20, 10).endCell())
+    .storeDict(null)
+    .storeRef(
+      beginCell()
+        .storeAddress(config.tonnelJettonAddress)
+        .storeUint(config.depositorTonnelMint, 32)
+        .storeUint(config.relayerTonnelMint, 32)
+        .endCell()
+    )
+    .endCell();
 }
+
 export const Opcodes = {
   deposit: 0x888,
   continue: 0x00,
