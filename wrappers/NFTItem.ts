@@ -1,8 +1,9 @@
-import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from 'ton-core';
+import {Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode} from 'ton-core';
 
 
 export class NFTItem implements Contract {
-  constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {}
+  constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {
+  }
 
   static createFromAddress(address: Address) {
     return new NFTItem(address);
@@ -17,10 +18,10 @@ export class NFTItem implements Contract {
   }
 
   async sendTransfer(provider: ContractProvider, via: Sender,
-                  opts: {
-                    toAddress: Address;
-                    value: bigint;
-                  }) {
+                     opts: {
+                       toAddress: Address;
+                       value: bigint;
+                     }) {
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
@@ -46,6 +47,15 @@ export class NFTItem implements Contract {
 
     console.log(content.beginParse().loadUint(8))
     return;
+
+  }
+
+  async getOwner(provider: ContractProvider) {
+    const result = await provider.get('get_nft_data', []);
+    result.stack.readBigNumber()
+    result.stack.readBigNumber()
+    result.stack.readAddress()
+    return result.stack.readAddress()
 
   }
 

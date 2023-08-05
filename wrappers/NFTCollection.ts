@@ -82,7 +82,7 @@ export class NFTCollection implements Contract {
       body: beginCell()
         .storeUint(222, 32) // opcode (reference TODO)
         .storeUint(0, 64) // queryid
-        .storeCoins(toNano('0.05')) // gas fee
+        .storeCoins(toNano('0.02')) // gas fee
         .storeRef(
           beginCell().storeAddress(opts.toAddress).endCell()
         )

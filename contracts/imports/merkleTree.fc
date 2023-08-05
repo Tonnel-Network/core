@@ -2,7 +2,7 @@
 
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 const ZERO_VALUE = 21663839004416932945382355908790599225266501822907911457504978515578255421292;
-const POOL_SIZE = 2 * 1000000000; ;; 2 TON for TESTNET
+const POOL_SIZE = 5 * 1000000000; ;; 5 TON for TESTNET
 
 
 const op::deposit = 0x888;
@@ -230,7 +230,7 @@ const const::tx_fee = 900000000; ;; 0.9 TON
             i = 100;
         }
         i -= 1;
-    } until (i != currentRootIndex);
+    } until (i == currentRootIndex);
     return 0;
 
 }
@@ -259,4 +259,8 @@ const const::tx_fee = 900000000; ;; 0.9 TON
         return 0;
     }
     return root_slice~load_uint(256);
+}
+
+(int) get_root_known(int root) method_id {
+    return is_known_root(root);
 }

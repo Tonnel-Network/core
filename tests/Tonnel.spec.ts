@@ -16,9 +16,9 @@ const wasmPath = path.join(__dirname, "../build/circuits/circuit.wasm");
 const zkeyPath = path.join(__dirname, "../build/circuits/circuit_final.zkey");
 
 const fee = 0.02;
-const pool_size = 2;
+const pool_size = 5;
 const deposit_fee = 0.95;
-
+const withdraw_fee = 0.15;
 
 export function parseG1Func(G1: bigint[]) {
   let num = G1[0]
@@ -174,10 +174,13 @@ describe('Tonnel', () => {
 
 
   it('should init Merkle and then deposit', async () => {
+    console.log('before-1', await tonnel.getBalance() / 1000000000n);
+
     await merkleInitialize();
     const tree = new MerkleTree(20);
     const rootInit = await tonnel.getLastRoot();
     expect(BigInt(tree.root())).toEqual(rootInit);
+    console.log('before', Number(await tonnel.getBalance()) / 1000000000);
 
     const sender = await blockchain.treasury('sender');
 
@@ -196,6 +199,7 @@ describe('Tonnel', () => {
     });
 
 
+    console.log('before1', Number(await tonnel.getBalance()) / 1000000000);
 
     expect(depositResult.transactions).toHaveTransaction({
       from: sender.address,
@@ -241,6 +245,7 @@ describe('Tonnel', () => {
     });
     const rootAfter = await tonnel.getLastRoot();
     expect(BigInt(tree.root())).toEqual(rootAfter);
+    console.log('after', Number(await tonnel.getBalance()) / 1000000000);
 
 
   });
@@ -250,6 +255,8 @@ describe('Tonnel', () => {
     const tree = new MerkleTree(20);
     const rootInit = await tonnel.getLastRoot();
     expect(BigInt(tree.root())).toEqual(rootInit);
+    console.log('before', Number(await tonnel.getBalance()) / 1000000000);
+
 
     const sender = await blockchain.treasury('sender');
 
@@ -274,6 +281,7 @@ describe('Tonnel', () => {
       exitCode: ERRORS.fund
     });
 
+    console.log('after', Number(await tonnel.getBalance()) / 1000000000);
 
 
   });
@@ -283,6 +291,7 @@ describe('Tonnel', () => {
     const tree = new MerkleTree(20);
     const rootInit = await tonnel.getLastRoot();
     expect(BigInt(tree.root())).toEqual(rootInit);
+    console.log('before', await tonnel.getBalance());
 
     const sender = await blockchain.treasury('sender');
     const cell_address_sender = beginCell().storeAddress(sender.address).endCell();
@@ -333,7 +342,6 @@ describe('Tonnel', () => {
 
     expect(await tonnel.getBalance()).toBeGreaterThan(toNano(pool_size))
     tree.insert(commitment);
-    const merkleProof = tree.proof(0);
 
     const increaseResult2 = await tonnel.sendContinue(sender.getSender(), {
       value: toNano('0.8'),
@@ -343,6 +351,33 @@ describe('Tonnel', () => {
       to: tonnel.address,
       success: true,
     });
+
+
+
+    ///second deposit
+
+
+    for (let i = 0; i < 120; i++) {
+      const randomBuf_2 = rbuffer(31);
+      const randomBuf2_2 = rbuffer(31);
+      const nullifier_2 = toBigIntLE(randomBuf2_2);
+      const secret_2 = toBigIntLE(randomBuf_2);
+      const commitment_2 = Sha256(secret_2.toString(), nullifier_2.toString());
+      await tonnel.sendDeposit(sender.getSender(), {
+        value: toNano((deposit_fee + pool_size * (1 + fee)).toString()),
+        commitment: BigInt(commitment_2),
+
+      });
+      tree.insert(commitment_2);
+
+      await tonnel.sendContinue(sender.getSender(), {
+        value: toNano('0.8'),
+      });
+    }
+    ///second deposit end
+
+    const merkleProof = tree.proof(0);
+
     const rootAfter = await tonnel.getLastRoot();
     expect(BigInt(tree.root())).toEqual(rootAfter);
 
@@ -363,9 +398,12 @@ describe('Tonnel', () => {
 
     const B_x = proof.pi_b[0].map((num: string) => BigInt(num))
     const B_y  = proof.pi_b[1].map((num: string) => BigInt(num))
+    const known = await tonnel.getRootKnown(BigInt(input.root));
+    expect(known).toEqual(1);
+
 
     const withdrawResult = await tonnel.sendWithdraw(owner.getSender(), {
-      value: toNano((deposit_fee + pool_size * (1 + fee)).toString()),
+      value: toNano((withdraw_fee).toString()),
       root: BigInt(publicSignals[0]),
       nullifierHash: BigInt(publicSignals[1]),
       recipient: sender.address,
@@ -407,6 +445,7 @@ describe('Tonnel', () => {
     expect(await jettonWalletRelayerContract.getBalance()).toEqual(toNano(50))
 
 
+    console.log('after', await tonnel.getBalance());
 
 
   }, 500000);

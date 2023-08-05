@@ -6,8 +6,9 @@ import {
   contractAddress,
   ContractProvider,
   Sender,
-  SendMode
+  SendMode, TupleItemCell
 } from 'ton-core';
+import {TupleItemSlice} from "ton-core/dist/tuple/tuple";
 
 export type TonnelConfig = {
   ownerAddress: Address;
@@ -112,24 +113,27 @@ export class Tonnel implements Contract {
       fee: bigint;
     }
   ) {
+    const inputCell = beginCell()
+      .storeUint(Opcodes.withdraw, 32)
+      .storeUint(opts.queryID ?? 0, 64)
+      .storeRef(
+        beginCell()
+          .storeUint(opts.root, 256)
+          .storeUint(opts.nullifierHash, 256)
+          .storeUint(opts.fee, 10)
+          .storeRef(
+            beginCell().storeAddress(opts.recipient).endCell()
+          ).storeRef(opts.a).storeRef(opts.b)
+          .storeRef(opts.c)
+          .endCell()
+      )
+      .endCell()
+    // const check = await this.getCheckVerify(provider, inputCell);
+    // console.log(check)
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
-      body: beginCell()
-        .storeUint(Opcodes.withdraw, 32)
-        .storeUint(opts.queryID ?? 0, 64)
-        .storeRef(
-          beginCell()
-            .storeUint(opts.root, 256)
-            .storeUint(opts.nullifierHash, 256)
-            .storeUint(opts.fee, 10)
-            .storeRef(
-              beginCell().storeAddress(opts.recipient).endCell()
-            ).storeRef(opts.a).storeRef(opts.b)
-            .storeRef(opts.c)
-            .endCell()
-        )
-        .endCell(),
+      body: inputCell,
     });
   }
 
@@ -154,6 +158,19 @@ export class Tonnel implements Contract {
   async getLastRoot(provider: ContractProvider) {
     const result = await provider.get('get_last_root', []);
     return result.stack.readBigNumberOpt();
+  }
+ async getRootKnown(provider: ContractProvider, root: bigint) {
+    const result = await provider.get('get_root_known', [
+      {type: 'int', value: root},
+    ]);
+    return result.stack.readNumber();
+  }
+  async getCheckVerify(provider: ContractProvider, cell: Cell) {
+    const result = await provider.get('check_verify', [
+      {type: 'slice', cell: cell} as TupleItemSlice,
+    ]);
+    console.log(result.stack)
+    return result.stack.readNumber();
   }
 
   async getBalance(provider: ContractProvider) {
