@@ -13,7 +13,7 @@ const error::fund = 103;
 const error::not_admin = 702;
 
 const const::tx_fee = 2 * 10000000;
-const const::tx_fee_send_jetton = 35000000; ;; 0.035 TON
+const const::tx_fee_send_jetton = 40000000; ;; 0.035 TON
 
 
 ;; load_data populates storage variables using stored data

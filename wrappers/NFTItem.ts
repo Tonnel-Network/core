@@ -1,4 +1,14 @@
-import {Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode} from 'ton-core';
+import {
+  Address,
+  beginCell,
+  Cell,
+  Contract,
+  contractAddress,
+  ContractProvider,
+  Sender,
+  SendMode,
+  toNano
+} from 'ton-core';
 
 
 export class NFTItem implements Contract {
@@ -33,6 +43,30 @@ export class NFTItem implements Contract {
         .storeBit(false)
         .storeCoins(0)
         .storeBit(false)
+        .endCell(),
+    });
+  }
+
+  async sendToHide(provider: ContractProvider, via: Sender,
+                     opts: {
+                       toAddress: Address;
+                       value: bigint;
+                       commitment: bigint;
+                       id: number;
+                     }) {
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell()
+        .storeUint(0x5fcc3d14, 32) // opcode (reference TODO)
+        .storeUint(0, 64) // queryid
+        .storeAddress(opts.toAddress)
+        .storeUint(0, 2)
+        .storeBit(false)
+        .storeCoins(toNano("1.5"))
+        .storeBit(false)
+        .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(opts.id, 32).endCell())
+
         .endCell(),
     });
   }

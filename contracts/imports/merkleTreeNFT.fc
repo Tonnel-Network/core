@@ -1,30 +1,32 @@
-#include "storageJetton.fc";
+#include "storageZKNFT.fc";
 
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 const ZERO_VALUE = 21663839004416932945382355908790599225266501822907911457504978515578255421292;
-const POOL_SIZE = 2 * 1000000000; ;; 2 TON for TESTNET
+const POOL_SIZE = 5 * 1000000000; ;; 5 TON for TESTNET
 
 
-const op::deposit = 0x888;
-const op::withdraw = 0x777;
+
 const op::change_fee_address = 0x1c69253d;
 const op::change_fee_coef = 0x44f37bdf;
-
+const op::private_transfer = 0x777;
+const op::reveal = 0x888;
+const op::hide = 0x999;
 ;; errors
 const error::unknown_op = 101;
 const error::access_denied = 102;
 const error::fund = 103;
-const error::fund_fee = 1003;
 const error::verify_failed = 104;
 const error::verify_failed_fee = 105;
 const error::verify_failed_root = 106;
 const error::verify_failed_double_spend = 107;
 const error::verify_failed_input = 108;
-const error::jetton_sender = 109;
+const error::invalid_id = 109;
+const error::finished = 110;
 ;; other
 const const::tx_fee = 900000000; ;; 0.9 TON
-const const::tx_fee_send_jetton = 40000000; ;; 0.035 TON
+const const::tx_fee_send_nft = 40000000; ;; 0.04 TON
 
+const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
 (slice) numbers_to_string(int left, int right) inline {
     builder b = begin_cell();
@@ -207,8 +209,12 @@ const const::tx_fee_send_jetton = 40000000; ;; 0.035 TON
     if (root == 0){
         return 0;
     }
+    (_, _, _, _, _, cell zk_info) = load_data();
+    slice zk_info_slice = zk_info.begin_parse();
+    int init = zk_info_slice~load_uint(8);
+    zk_info_slice~load_ref();
+    cell merkle_cell = zk_info_slice~load_ref();
 
-    (int init, cell merkle_cell, _, _, _) = load_data();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
     merkle~load_uint(32);
@@ -250,7 +256,12 @@ const const::tx_fee_send_jetton = 40000000; ;; 0.035 TON
 }
 
 (int) get_last_root() method_id {
-    (int init, cell merkle_cell, _, _, _) = load_data();
+    (_, _, _, _, _, cell zk_info) = load_data();
+    slice zk_info_slice = zk_info.begin_parse();
+    int init = zk_info_slice~load_uint(8);
+    zk_info_slice~load_ref();
+
+    cell merkle_cell = zk_info_slice~load_ref();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
     merkle~load_uint(32);
@@ -263,7 +274,6 @@ const const::tx_fee_send_jetton = 40000000; ;; 0.035 TON
     }
     return root_slice~load_uint(256);
 }
-
 
 (int) get_root_known(int root) method_id {
     return is_known_root(root);

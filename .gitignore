@@ -131,5 +131,5 @@ dist
 
 .idea
 
-build/circuits/circuit_final.zkey
+build/transfer circom/circuit_final.zkey
 temp

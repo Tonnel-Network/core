@@ -143,4 +143,13 @@ export class JettonMinter implements Contract {
     return result.stack.readBigNumber();
   }
 
+  async getWalletCell(provider: ContractProvider): Promise<any> {
+    const result = await provider.get('get_jetton_data', []);
+    result.stack.pop()
+    result.stack.pop()
+    result.stack.pop()
+    result.stack.pop()
+    return result.stack.pop();
+  }
+
 }

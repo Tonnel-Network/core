@@ -1,0 +1,27 @@
+#include "stdlib.fc";
+
+;; storage variables
+
+
+(slice, int, cell, cell, cell, cell) load_data() inline {
+    var ds = get_data().begin_parse();
+    return
+            (ds~load_msg_addr(), ;; owner_address
+                    ds~load_uint(64), ;; next_item_index
+                    ds~load_ref(), ;; content
+                    ds~load_ref(), ;; nft_item_code
+                    ds~load_ref(),  ;; royalty_params
+                    ds~load_ref() ;; zk_info
+            );
+}
+
+() save_data(slice owner_address, int next_item_index, cell content, cell nft_item_code, cell royalty_params, cell zk_info) impure inline {
+    set_data(begin_cell()
+            .store_slice(owner_address)
+            .store_uint(next_item_index, 64)
+            .store_ref(content)
+            .store_ref(nft_item_code)
+            .store_ref(royalty_params)
+            .store_ref(zk_info)
+            .end_cell());
+}

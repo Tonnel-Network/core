@@ -5,8 +5,6 @@ int op::withdraw() asm "0x41836980 PUSHINT";
 int op::transfer_ownership() asm "0x2da38aaf PUSHINT";
 
 ;; errors
-int error::unknown_op() asm "101 PUSHINT";
-int error::access_denied() asm "102 PUSHINT";
 int error::insufficient_balance() asm "103 PUSHINT";
 int error::sold_out() asm "104 PUSHINT";
 int error::not_enough() asm "708 PUSHINT";
