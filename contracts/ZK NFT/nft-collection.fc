@@ -329,7 +329,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         if(send_amount != 1000000000000) {
             send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
 
-            throw(error::fund);
+            return ();
         }
         cell new_body = in_msg_body~load_ref();
         in_msg_body = new_body.begin_parse();
@@ -343,11 +343,11 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         if (id != next_item_index) {
             send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
 
-            throw(error::invalid_id);
+            return ();
         }
         if (id == 111){
             send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
-            throw(error::finished);
+            return ();
         }
         send_jetton(owner_address, send_amount, jetton_master_address, JETTON_BYTECODE);
 

@@ -1,0 +1,145 @@
+
+#include "../imports/stdlib.fc";
+
+const const::tx_fee = 20000000; ;;0.02 TON
+const error::fund = 100;
+const error::whitelist = 101;
+const error::limit = 102;
+const error::access_denied = 103;
+
+const op::send_TON = "op::send_TON"c;
+const op::withdraw_TON = "op::withdraw_TON"c;
+const op::set_limit = "op::set_limit"c;
+
+(cell, slice, int, int ,int) load_data() impure {
+    var ds = get_data().begin_parse();
+    cell whitelists = ds~load_dict();
+    slice owner = ds~load_msg_addr();
+    int perNFTLimit = ds~load_coins();
+    int totalSupply = ds~load_coins();
+    int totalSold = ds~load_coins();
+    ds.end_parse();
+    return (whitelists, owner, perNFTLimit, totalSupply, totalSold);
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data(cell whitelists, slice owner, int perNFTLimit, int totalSupply, int totalSold) impure {
+    set_data(
+        begin_cell().store_dict(whitelists).store_slice(owner).store_coins(perNFTLimit)
+        .store_coins(totalSupply).store_coins(totalSold).end_cell()
+    );
+}
+
+
+
+() send_ton(slice recepient, int amount) impure inline {
+    var msg = begin_cell()
+            .store_uint(0x10, 6)
+            .store_slice(recepient)
+            .store_grams(amount)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .end_cell();
+    send_raw_message(msg, 1);
+
+}
+
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+            .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+            .store_uint (1, 2)
+            .store_uint (256, 9)
+            .store_uint(event_id, 256)
+            .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+            .store_slice(data)
+            .end_cell();
+    send_raw_message(msg, 0);
+}
+
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    (cell whitelists, slice owner, int perNFTLimit, int totalSupply, int totalSold) = load_data(); ;; here we populate the storage variables
+
+
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+
+
+    if(op == op::send_TON) {
+        if (perNFTLimit == 0) {
+            send_ton(sender_address, msg_value - const::tx_fee);
+            return ();
+        }
+        (slice data, int f) = whitelists.udict_get?(256, slice_hash(sender_address));
+        int tonAmount = 0;
+        int nftCount = 0;
+        if(f == 0) {
+            throw(error::whitelist);
+        }
+
+        ifnot(f == 0) {
+            nftCount = data~load_uint(32);
+            tonAmount = data~load_coins();
+        }
+
+        int amount_accepted_limit = perNFTLimit * nftCount - tonAmount;
+        int amount_accepted = msg_value;
+        if (msg_value > amount_accepted_limit) {
+            amount_accepted = amount_accepted_limit;
+        }
+
+        if(amount_accepted + totalSold > totalSupply) {
+            amount_accepted = totalSupply - totalSold;
+        }
+
+        if(msg_value > amount_accepted) {
+            send_ton(sender_address, msg_value - amount_accepted - const::tx_fee);
+        }
+
+
+        whitelists~udict_set(256, slice_hash(sender_address),
+                begin_cell().store_uint(nftCount, 32).store_coins(tonAmount + amount_accepted).end_cell().begin_parse());
+        emit_log_simple(op::send_TON, begin_cell().store_coins(amount_accepted).end_cell().begin_parse());
+        save_data(whitelists, owner, perNFTLimit, totalSupply, totalSold + amount_accepted);
+        return ();
+    }
+
+    throw_unless(error::access_denied, equal_slices(sender_address, owner));
+    if(op == op::withdraw_TON) {
+        int amount_to_withdraw = in_msg_body~load_coins();
+
+
+        send_ton(sender_address, amount_to_withdraw);
+
+        save_data(whitelists, owner, perNFTLimit, totalSupply, totalSold);
+        return ();
+    }
+
+    if(op == op::set_limit){
+        int new_limit = in_msg_body~load_coins();
+
+        save_data(whitelists, owner, new_limit, totalSupply, totalSold);
+        return ();
+    }
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+(cell, slice, int, int ,int) get_state() method_id {
+    var (whitelists, owner, perNFTLimit, totalSupply, totalSold) = load_data();
+    return (whitelists, owner, perNFTLimit, totalSupply, totalSold);
+
+}
+
+
