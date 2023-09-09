@@ -6,7 +6,7 @@ template TransferNFT(levels) {
     signal input root;
 
     signal private input secret;
-    signal private input newSecret;
+    //signal private input newSecret;
     signal private input pathElements[levels];
     signal private input pathIndices[levels];
 
@@ -27,11 +27,13 @@ template TransferNFT(levels) {
            tree.pathIndices[i] <== pathIndices[i];
        }
 
-
-    component newCommitmentHasher = HashLeftRight();
-    newCommitmentHasher.left <== id;
-    newCommitmentHasher.right <== newSecret;
-    newCommitment <== newCommitmentHasher.hash;
+// should be deleted
+ //   component newCommitmentHasher = HashLeftRight();
+  //  newCommitmentHasher.left <== id;
+  // newCommitmentHasher.right <== newSecret;
+  //  newCommitment <== newCommitmentHasher.hash;
+    signal newCommitmentSquare;
+    newCommitmentSquare <== newCommitment * newCommitment;
 
     component nullifierHasher = HashLeftRight();
     nullifierHasher.left <== secret;
