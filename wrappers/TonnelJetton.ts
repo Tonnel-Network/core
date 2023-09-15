@@ -6,8 +6,9 @@ import {
   contractAddress,
   ContractProvider,
   Sender,
-  SendMode
+  SendMode, toNano
 } from 'ton-core';
+import {TupleItemSlice} from "ton-core/dist/tuple/tuple";
 
 export type TonnelJettonConfig = {
   ownerAddress: Address;
@@ -29,6 +30,8 @@ export function tonnelConfigToCell(config: TonnelJettonConfig): Cell {
         .storeAddress(config.tonnelJettonAddress)
         .storeUint(config.depositorTonnelMint, 32)
         .storeUint(config.relayerTonnelMint, 32)
+        .storeCoins(toNano('1.6'))
+        .storeCoins(toNano('0.8'))
         .endCell()
     ).storeDict(null)
     .storeRef(
@@ -43,6 +46,7 @@ export const Opcodes = {
   deposit: 0x888,
   continue: 0x00,
   withdraw: 0x777,
+  changeFee: 0x999
 };
 // const error::unknown_op = 101;
 // const error::access_denied = 102;
@@ -116,7 +120,7 @@ export class TonnelJetton implements Contract {
       root: bigint;
       nullifierHash: bigint;
       recipient: Address;
-      fee: bigint;
+      fee: number;
     }
   ) {
     await provider.internal(via, {
@@ -154,10 +158,42 @@ export class TonnelJetton implements Contract {
       sendMode: SendMode.PAY_GAS_SEPARATELY,
       body: beginCell()
         .storeUint(Opcodes.continue, 32)
-        .storeUint(opts.queryID ?? 0, 64)
+        .storeUint(opts.queryID ?? 0, 64).storeAddress(via.address)
         .endCell(),
     });
   }
+  async sendChangeFee(
+      provider: ContractProvider,
+      via: Sender,
+      opts: {
+        value: bigint;
+        queryID?: number;
+        ownerAddress: Address;
+          tonnelJettonAddress: Address;
+          depositorTonnelMint: number;
+          relayerTonnelMint: number;
+      }
+    ) {
+      await provider.internal(via, {
+        value: opts.value,
+        sendMode: SendMode.PAY_GAS_SEPARATELY,
+        body: beginCell()
+          .storeUint(Opcodes.changeFee, 32)
+          .storeUint(opts.queryID ?? 0, 64)
+            .storeRef(
+                beginCell()
+                    .storeAddress(opts.ownerAddress)
+                    .storeUint(20, 10)
+                    .storeAddress(opts.tonnelJettonAddress)
+                    .storeUint(opts.depositorTonnelMint, 32)
+                    .storeUint(opts.relayerTonnelMint, 32)
+                    .storeCoins(toNano('1.6'))
+                    .storeCoins(toNano('0.8'))
+                    .endCell()
+            )
+          .endCell(),
+      });
+   }
 
   async getLastRoot(provider: ContractProvider) {
     const result = await provider.get('get_last_root', []);
@@ -167,6 +203,19 @@ export class TonnelJetton implements Contract {
   async getBalance(provider: ContractProvider) {
     const result = await provider.getState();
     return result.balance;
+  }
+
+  async getCheckVerify(provider: ContractProvider, cell: Cell) {
+    try {
+      const result = await provider.get('check_verify', [
+        {type: 'slice', cell: cell} as TupleItemSlice,
+      ]);
+      console.log(result.stack)
+      return result.stack.readNumber();
+    } catch (e) {
+      return 0;
+    }
+
   }
 
 }

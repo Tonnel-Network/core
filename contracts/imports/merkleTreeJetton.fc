@@ -2,11 +2,12 @@
 
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 const ZERO_VALUE = 21663839004416932945382355908790599225266501822907911457504978515578255421292;
-const POOL_SIZE = 2 * 1000000000; ;; 2 TON for TESTNET
+const POOL_SIZE = 2000 * 1000000000; ;; 2000 Jetton for TESTNET
 
 
 const op::deposit = 0x888;
 const op::withdraw = 0x777;
+const op::set_fee = 0x999;
 const op::change_fee_address = 0x1c69253d;
 const op::change_fee_coef = 0x44f37bdf;
 
@@ -22,8 +23,7 @@ const error::verify_failed_double_spend = 107;
 const error::verify_failed_input = 108;
 const error::jetton_sender = 109;
 ;; other
-const const::tx_fee = 900000000; ;; 0.9 TON
-const const::tx_fee_send_jetton = 40000000; ;; 0.035 TON
+const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
 
 
 (slice) numbers_to_string(int left, int right) inline {

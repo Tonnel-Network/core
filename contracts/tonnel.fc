@@ -27,9 +27,9 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
                     .end_cell()
             );
 
-    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
-
+    send_raw_message(msg.end_cell(), 2); ;; paying fees, revert on errors
 }
+
 () send_ton(slice recepient, int amount, int mode) impure inline {
 
     var msg = begin_cell()

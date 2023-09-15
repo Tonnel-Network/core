@@ -1,0 +1,141 @@
+
+#include "../imports/stdlib.fc";
+
+const const::tx_fee = 40000000; ;;0.04 TON
+
+const error::whitelist = 101;
+const error::fully_claimed = 102;
+const error::cliff_not_passed = 103;
+
+const op::claim_TONNEL = "op::claim_TONNEL"c;
+
+
+const time::start = 1692550800; ;; Sun Aug 20 2023 17:00:00 GMT+0000
+const time::end = 1700503200; ;; Mon Nov 20 2023 18:00:00 GMT+0000
+const time::cliff = 1 * 60 * 60 * 24 * 30; ;; 30 days
+
+
+(cell, slice) load_data() impure {
+    var ds = get_data().begin_parse();
+    cell whitelists = ds~load_dict();
+    slice JETTON_MASTER_ADDRESS = ds~load_msg_addr();
+    ds.end_parse();
+    return (whitelists, JETTON_MASTER_ADDRESS);
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data(cell whitelists, slice JETTON_MASTER_ADDRESS) impure {
+    set_data(
+        begin_cell().store_dict(whitelists).store_slice(JETTON_MASTER_ADDRESS).end_cell()
+    );
+}
+
+
+() mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
+
+    var msg = begin_cell()
+    .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(JETTON_MASTER_ADDRESS)
+    .store_coins(const::tx_fee)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(21, 32)
+    .store_uint(0, 64)
+    .store_slice(recepient)
+    .store_coins(20000000)
+    .store_ref(
+        begin_cell().store_uint(0x178d4519, 32)
+        .store_uint(0, 64)
+        .store_coins(amount)
+        .store_slice(JETTON_MASTER_ADDRESS)
+        .store_uint(0, 200)
+        .store_uint(0, 67)
+        .store_coins(0)
+        .store_uint(0, 1)
+        .end_cell()
+    );
+
+    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
+
+}
+
+
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+            .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+            .store_uint (1, 2)
+            .store_uint (256, 9)
+            .store_uint(event_id, 256)
+            .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+            .store_slice(data)
+            .end_cell();
+    send_raw_message(msg, 0);
+}
+
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+    (cell whitelists, slice JETTON_MASTER_ADDRESS) = load_data(); ;; here we populate the storage variables
+
+
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+
+
+    if(op == op::claim_TONNEL) {
+        int current_time = now();
+
+        throw_unless(error::cliff_not_passed, current_time > time::start + time::cliff);
+        int amount_claimed = in_msg_body~load_coins();
+        (slice data, int f) = whitelists.udict_get?(256, slice_hash(sender_address));
+
+        if(f == 0) {
+            throw(error::whitelist);
+        }
+        int totalShare = data~load_coins();
+        int claimedShare = data~load_coins();
+        throw_unless(error::fully_claimed, claimedShare < totalShare);
+
+        current_time = min(current_time, time::end);
+        int allowed_amount = (current_time - time::start) * totalShare / (time::end - time::start);
+        int amount_accepted = min(allowed_amount - claimedShare, amount_claimed);
+        throw_unless(error::fully_claimed, amount_accepted > 0);
+        mint_tonnel(sender_address, amount_accepted, JETTON_MASTER_ADDRESS);
+        whitelists~udict_set(256, slice_hash(sender_address),
+            begin_cell()
+            .store_coins(totalShare)
+            .store_coins(claimedShare + amount_accepted)
+            .end_cell().begin_parse()
+        );
+        emit_log_simple(op::claim_TONNEL, begin_cell().store_coins(amount_accepted).end_cell().begin_parse());
+        save_data(whitelists, JETTON_MASTER_ADDRESS);
+        return ();
+    }
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+(int) get_state(slice sender_address) method_id {
+    (cell whitelists, _) = load_data();
+    (slice data, int f) = whitelists.udict_get?(256, slice_hash(sender_address));
+    if(f == 0) {
+        return 0;
+    }
+    int totalShare = data~load_coins();
+    int claimedShare = data~load_coins();
+    int current_time = now();
+    current_time = min(current_time, time::end);
+    int allowed_amount = (current_time - time::start) * totalShare / (time::end - time::start);
+    return allowed_amount - claimedShare;
+}
+
+

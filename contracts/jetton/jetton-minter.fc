@@ -89,6 +89,7 @@ int check_mint_access(slice check_address, cell minters) impure inline {
         slice master_msg_cs = master_msg.begin_parse();
         master_msg_cs~skip_bits(32 + 64); ;; op + query_id
         int jetton_amount = master_msg_cs~load_coins();
+        throw_unless(error::mint_limit_exceeded(), total_supply + jetton_amount <= const::max_token_supply());
         mint_tokens(to_address, jetton_wallet_code, amount, master_msg);
         save_data(total_supply + jetton_amount, admin_address, content, jetton_wallet_code, minters);
         return ();
@@ -167,8 +168,6 @@ int check_mint_access(slice check_address, cell minters) impure inline {
         minters~udict_delete?(256, slice_hash(minter_address));
         save_data(total_supply, admin_address, content, jetton_wallet_code, minters);
         return ();
-
-
     }
     throw(0xffff);
 }

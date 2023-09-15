@@ -4,6 +4,19 @@
 
 const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
+() send_continue(int const::tx_fee_continue) impure inline {
+    var msg = begin_cell()
+    .store_uint(0x10, 6)
+    .store_slice(my_address())
+    .store_grams(const::tx_fee_continue)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(0, 32)
+    .store_uint(0, 64)
+    .end_cell();
+    send_raw_message(msg, 1);
+
+}
+
 () send_jetton(slice recepient, int amount, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
     if (amount == 0) {
         return ();
@@ -66,6 +79,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     send_raw_message(msg, mode);
 
 }
+
 () emit_log_simple (int event_id, slice data) impure inline {
     var msg = begin_cell()
             .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
@@ -94,12 +108,6 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     slice sender_address = cs~load_msg_addr();
 
     (int init, cell merkle, cell fee_info, cell nullifiers, cell jetton_info) = load_data(); ;; here we populate the storage variables
-    slice fee_info_slice = fee_info.begin_parse();
-    slice fee_recepient = fee_info_slice~load_msg_addr();
-    int fee_percent = fee_info_slice~load_uint(10);
-    slice tonnel_jetton_master_address = fee_info_slice~load_msg_addr();
-    int tonnel_mint_amount_deposit = fee_info_slice~load_uint(32); ;; amount of jetton to mint for depositor, it should be multiplied by 10^9
-    int tonnel_mint_amount_relayer = fee_info_slice~load_uint(32); ;; amount of jetton to mint for relayers, it should be multiplied by 10^9
 
     if (init < 20) { ;; init merkle tree
         (init, merkle) = construct_tree(init, merkle);
@@ -123,16 +131,23 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
             return ();
         }
-        throw_unless(error::access_denied, op == 0);
-        (int index, init, merkle) = insert(0, 0, merkle);
-        save_data(init, merkle, fee_info, nullifiers, jetton_info);
-        send_ton(sender_address, 0, SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
+        if(op != op::withdraw) {
+            throw_unless(error::access_denied, op == 0);
+            (int index, init, merkle) = insert(0, 0, merkle);
+            save_data(init, merkle, fee_info, nullifiers, jetton_info);
+            return ();
+        }
 
-        ;; should Return token to sender
-        return ();
     }
 
-
+    slice fee_info_slice = fee_info.begin_parse();
+    slice fee_recepient = fee_info_slice~load_msg_addr();
+    int fee_percent = fee_info_slice~load_uint(10);
+    slice tonnel_jetton_master_address = fee_info_slice~load_msg_addr();
+    int tonnel_mint_amount_deposit = fee_info_slice~load_uint(32); ;; amount of jetton to mint for depositor, it should be multiplied by 10^9
+    int tonnel_mint_amount_relayer = fee_info_slice~load_uint(32); ;; amount of jetton to mint for relayers, it should be multiplied by 10^9
+    int const::tx_fee = fee_info_slice~load_coins();
+    int const::tx_fee_continue = fee_info_slice~load_coins();
     if (op == op::transfer_notification()) {
         ;; should check if jetton is valid
         int send_amount = in_msg_body~load_coins(); ;; Jettons send
@@ -142,15 +157,16 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         cell JETTON_BYTECODE = jetton_info_slice~load_ref();
         int fee_amount = POOL_SIZE * fee_percent / 1000; ;; 2% fee
         throw_unless(error::jetton_sender, equal_slices(sender_address, calculate_user_jetton_wallet_address(my_address(), jetton_master_address, JETTON_BYTECODE)));
-        throw_unless(error::fund_fee, msg_value > const::tx_fee + const::tx_fee_send_jetton);
         slice origin_sender = in_msg_body~load_msg_addr(); ;; transfer origin address
 
+        if(msg_value < const::tx_fee + const::tx_fee_send_jetton) {
+            send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
+            return ();
+        }
         if (send_amount != POOL_SIZE + fee_amount) {
             send_jetton(origin_sender, send_amount, jetton_master_address, JETTON_BYTECODE);
             return ();
-
         }
-
 
         cell commitment = in_msg_body~load_ref();
 
@@ -166,10 +182,30 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
         emit_log_simple(op::deposit, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
         save_data(init, merkle, fee_info, nullifiers, jetton_info);
-        send_ton(sender_address, msg_value - get_gas_spent() * 1000 - 2 * const::tx_fee_send_jetton - 10000000, 1);
+        send_continue(const::tx_fee_continue);
+
         return ();
     }
     if (op == op::withdraw) {
+        ;;
+        ;;
+        ;; Proof inputs
+        ;;
+        ;;
+        cell withdraw_info = in_msg_body~load_ref();
+        slice withdraw_info_slice1 = withdraw_info.begin_parse();
+        int root = withdraw_info_slice1~load_uint(256);
+        int nullifier_hash = withdraw_info_slice1~load_uint(256);
+        throw_unless(error::verify_failed_double_spend, is_unknown_nullifier(nullifier_hash, nullifiers));
+
+        int fee_coef = withdraw_info_slice1~load_uint(10);
+        cell addresses = withdraw_info_slice1~load_ref();
+        slice addresses_slice = addresses.begin_parse();
+        slice recipient = addresses_slice~load_msg_addr();
+        throw_unless(error::verify_failed_input, root < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
+        throw_unless(error::verify_failed_fee, fee_coef < 1000);
+        throw_unless(error::verify_failed_root, is_known_root(root));
 
         ;;
         ;;
@@ -188,19 +224,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         slice gamma2 = begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
         slice delta2 = begin_cell().store_uint(41927526620200715382934117118, 96).store_uint(33003720790981973342161950360, 96).store_uint(29172541997772449919163419697, 96).store_uint(42084828233699416556951173819, 96).store_uint(2487209597368882800290830367, 96).store_uint(13746812365516576600981842744, 96).store_uint(47485423923078880599824467725, 96).store_uint(50383785865280499143808869142, 96).end_cell().begin_parse();
 
-        ;;
-        ;;
-        ;; Proof inputs
-        ;;
-        ;;
-        cell withdraw_info = in_msg_body~load_ref();
-        slice withdraw_info_slice1 = withdraw_info.begin_parse();
-        int root = withdraw_info_slice1~load_uint(256);
-        int nullifier_hash = withdraw_info_slice1~load_uint(256);
-        int fee_coef = withdraw_info_slice1~load_uint(10);
-        cell addresses = withdraw_info_slice1~load_ref();
-        slice addresses_slice = addresses.begin_parse();
-        slice recipient = addresses_slice~load_msg_addr();
+
 
         cell A_cell = withdraw_info_slice1~load_ref();
         cell B_cell = withdraw_info_slice1~load_ref();
@@ -209,17 +233,12 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         slice B = B_cell.begin_parse();
         slice C = C_cell.begin_parse();
         slice vk_x = IC0;
-        throw_unless(error::verify_failed_input, root < FIELD_SIZE);
-        throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
 
 
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, nullifier_hash));
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, recipient.preload_uint(256)));
         vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, fee_coef));
-        throw_unless(error::verify_failed_fee, fee_coef < 1000);
-        throw_unless(error::verify_failed_root, is_known_root(root));
-        throw_unless(error::verify_failed_double_spend, is_unknown_nullifier(nullifier_hash, nullifiers));
 
         slice neg_a = bls_g1_negate(A);
         int success = bls_pairing_check(neg_a,
@@ -248,9 +267,17 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
         save_data(init, merkle, fee_info, nullifiers, jetton_info);
 
+        send_ton(sender_address, 0, SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
 
         return ();
 
+
+    }
+    throw_unless(401, equal_slices(sender_address, fee_recepient));
+    if (op == op::set_fee) {
+        cell fee_info_new = in_msg_body~load_ref();
+        save_data(init, merkle, fee_info_new, nullifiers, jetton_info);
+        return ();
 
     }
     throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
@@ -258,10 +285,9 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
 
 
-(int) check_verify(cell in_msg_body_cell) method_id {
-    slice in_msg_body = in_msg_body_cell.begin_parse();
+(int) check_verify(slice in_msg_body) method_id {
     in_msg_body~load_uint(32 + 64);
-    (int init, cell merkle, cell fee_info, cell nullifiers, cell jetton_tonnel) = load_data(); ;; here we populate the storage variables
+    (_, _, _, cell nullifiers, _) = load_data(); ;; here we populate the storage variables
 
     slice alf1 = begin_cell().store_uint(161660088803638, 48).store_uint(174915596092591, 48).store_uint(103625742955285, 48).store_uint(45033598540138, 48).store_uint(228788439962206, 48).store_uint(278692321121119, 48).store_uint(106161774861813, 48).store_uint(150828133086774, 48).end_cell().begin_parse();
     slice IC0 = begin_cell().store_uint(152168983986473, 48).store_uint(221619329025907, 48).store_uint(26058364908651, 48).store_uint(35604054704562, 48).store_uint(57203835768825, 48).store_uint(23557499860187, 48).store_uint(42609274589494, 48).store_uint(108382761734656, 48).end_cell().begin_parse();
