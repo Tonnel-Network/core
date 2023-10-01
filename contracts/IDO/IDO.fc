@@ -1,0 +1,191 @@
+#include "../imports/stdlib.fc";
+
+
+
+const op::buy_TONNEL = "op::buy_TONNEL"c;
+const op::withdraw_TON = "op::withdraw_TON"c;
+const op::finish_sale = "op::finish_sale"c;
+const op::start_sale = "op::start_sale"c;
+
+const error::not_enough_TONs = 100;
+const error::sold_out = 101;
+const error::access_denied = 102;
+const error::sale_not_active = 103;
+const TOTAL_SALE = 500000000000000; ;; 500K TONNELs
+const MIN_PRICE = 200000000; ;; 0.2 TON
+const REFREAL_PERCENT = 1; ;; 1%
+const REDUCE_PERCENT = 5; ;; 5%
+
+const REDUCE_CYCLE = 3600; ;; 1 hour
+const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before price reduction
+(int) INCREASE_FACTOR(int purchase_size, int price) impure {
+    ;; increase factor is a function that increases the price of the TONNEL token based on the purchase size
+    return (TOTAL_SALE + 5 * purchase_size) * price / TOTAL_SALE;
+}
+
+(int, int, int) update_price(int price, int sold_last_cycle, int start_last_cycle, int total_sold, int time_now) impure {
+    ;; returns (new_price, new_sold_last_cycle, new_start_last_cycle)
+    ;; update_price is a function that updates the price of the TONNEL token based on the total sold
+    if (time_now - start_last_cycle > REDUCE_CYCLE) {
+        ;; cycle_passed
+        if (sold_last_cycle > REDUCE_PRICE_THRESHOLD * (TOTAL_SALE - total_sold) / 100) {
+            ;; keep price
+            return (price, 0, time_now);
+        }
+        ;; we had a cycle, but not enough was sold, so we reduce the price
+        price = price * (100 - REDUCE_PERCENT) / 100;
+        return (price, 0, time_now);
+    }
+    ;; we are in the same cycle so no need to update the price
+    return (price, sold_last_cycle, start_last_cycle);
+
+}
+
+(cell, slice, int, int, int, int, int) load_data() impure {
+    var ds = get_data().begin_parse();
+    cell referrals = ds~load_dict(); ;; referralID -> 'wallet'
+    slice owner = ds~load_msg_addr(); ;; owner of the contract
+    int active = ds~load_uint(1); ;; sale active
+    int total_sold = ds~load_coins(); ;; total sold
+    int price = ds~load_coins(); ;; current price
+    int sold_last_cycle = ds~load_coins(); ;; total sold in last cycle
+    int start_last_cycle = ds~load_uint(32); ;; last cycle start timestamp
+    ds.end_parse();
+    return (referrals, owner, active, total_sold, price, sold_last_cycle, start_last_cycle);
+}
+
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data(cell referrals, slice owner, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) impure {
+    var ds = begin_cell().store_dict(referrals).store_slice(owner)
+    .store_uint(active, 1)
+    .store_coins(total_sold)
+    .store_coins(price)
+    .store_coins(sold_last_cycle).store_uint(start_last_cycle, 32)
+    .end_cell();
+
+    set_data(ds);
+}
+
+
+() send_ton(slice recepient, int amount) impure inline {
+    var msg = begin_cell()
+    .store_uint(0x10, 6)
+    .store_slice(recepient)
+    .store_grams(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell();
+    send_raw_message(msg, 1);
+
+}
+
+() emit_log_simple(int event_id, slice data) impure inline {
+    var msg = begin_cell()
+    .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+    .store_uint (1, 2)
+    .store_uint (256, 9)
+    .store_uint(event_id, 256)
+    .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+    .store_slice(data)
+    .end_cell();
+    send_raw_message(msg, 0);
+}
+
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) {
+        ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    (cell referrals, slice owner, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
+
+
+
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+
+
+    if (op == op::buy_TONNEL) {
+        throw_unless(error::not_enough_TONs, msg_value >= 1000000000); ;; 1 TON minimum
+        throw_unless(error::sold_out, total_sold < TOTAL_SALE); ;; sold out
+        throw_unless(error::sale_not_active, active != 0); ;; sale not active
+
+        int time_now = now();
+        (price, sold_last_cycle, start_last_cycle) = update_price(price, sold_last_cycle, start_last_cycle, total_sold, time_now);
+        int purchase_size = msg_value * 1000000000 / price;
+        int refund = 0;
+        if (purchase_size > TOTAL_SALE - total_sold) {
+            refund = (purchase_size - (TOTAL_SALE - total_sold)) * price / 1000000000;
+            purchase_size = TOTAL_SALE - total_sold;
+        }
+        int referralID = in_msg_body~load_uint(256);
+
+
+        (slice address, int f) = referrals.udict_get?(256, referralID);
+        if (f != 0) {
+            int referral_amount = purchase_size * REFREAL_PERCENT / 100;
+            send_ton(address, referral_amount * price / 1000000000);
+        }
+        if (refund > 0) {
+            send_ton(sender_address, refund);
+        }
+        price = INCREASE_FACTOR(purchase_size, price);
+
+        emit_log_simple(op::buy_TONNEL, begin_cell().store_slice(sender_address).store_coins(purchase_size).end_cell().begin_parse());
+        save_data(referrals, owner, active, total_sold + purchase_size, price, sold_last_cycle + purchase_size, start_last_cycle);
+        return ();
+    }
+
+    throw_unless(error::access_denied, equal_slices(sender_address, owner));
+    if (op == op::withdraw_TON) {
+        int amount_to_withdraw = in_msg_body~load_coins();
+        send_ton(sender_address, amount_to_withdraw);
+        return ();
+    }
+    if (op == op::finish_sale) {
+        save_data(referrals, owner, 0, total_sold, price, sold_last_cycle, start_last_cycle);
+        return ();
+    }
+
+    if (op == op::start_sale) {
+        save_data(referrals, owner, 1, total_sold, price, sold_last_cycle, start_last_cycle);
+        return ();
+    }
+
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+(int, int, int, int, int) get_state() method_id {
+    (_, _, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
+    return (active, total_sold, price, sold_last_cycle, start_last_cycle);
+}
+
+
+(int, int) get_price() method_id {
+    (_, _, _, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
+    if (sold_last_cycle > REDUCE_PRICE_THRESHOLD * (TOTAL_SALE - total_sold) / 100) {
+        return (price, 0);
+    }
+    return (price, REDUCE_PRICE_THRESHOLD * (TOTAL_SALE - total_sold) / 100 - sold_last_cycle);
+}
+
+(slice) get_referral(int referralID) method_id {
+    (cell referrals, _, _, _, _, _, _) = load_data(); ;; here we populate the storage variables
+    (slice address, int f) = referrals.udict_get?(256, referralID);
+    if (f != 0) {
+        return address;
+    }
+    return null();
+}
+
