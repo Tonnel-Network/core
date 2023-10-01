@@ -1,8 +1,10 @@
 #include "../imports/stdlib.fc";
 
 
+const const::tx_fee = 40000000; ;;0.04 TON
 
 const op::buy_TONNEL = "op::buy_TONNEL"c;
+const op::claim_TONNEL = "op::claim_TONNEL"c;
 const op::withdraw_TON = "op::withdraw_TON"c;
 const op::finish_sale = "op::finish_sale"c;
 const op::start_sale = "op::start_sale"c;
@@ -11,6 +13,8 @@ const error::not_enough_TONs = 100;
 const error::sold_out = 101;
 const error::access_denied = 102;
 const error::sale_not_active = 103;
+const error::no_tonnel_bought = 104;
+
 const TOTAL_SALE = 500000000000000; ;; 500K TONNELs
 const MIN_PRICE = 200000000; ;; 0.2 TON
 const REFREAL_PERCENT = 1; ;; 1%
@@ -18,6 +22,8 @@ const REDUCE_PERCENT = 5; ;; 5%
 
 const REDUCE_CYCLE = 3600; ;; 1 hour
 const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before price reduction
+
+global slice JETTON_MASTER_ADDRESS;
 (int) INCREASE_FACTOR(int purchase_size, int price) impure {
     ;; increase factor is a function that increases the price of the TONNEL token based on the purchase size
     return (TOTAL_SALE + 5 * purchase_size) * price / TOTAL_SALE;
@@ -41,30 +47,62 @@ const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before 
 
 }
 
-(cell, slice, int, int, int, int, int) load_data() impure {
+(cell, cell, slice, int, int, int, int, int) load_data() impure {
     var ds = get_data().begin_parse();
     cell referrals = ds~load_dict(); ;; referralID -> 'wallet'
+    cell purchases = ds~load_dict(); ;; wallet -> 'amount'
     slice owner = ds~load_msg_addr(); ;; owner of the contract
     int active = ds~load_uint(1); ;; sale active
     int total_sold = ds~load_coins(); ;; total sold
     int price = ds~load_coins(); ;; current price
     int sold_last_cycle = ds~load_coins(); ;; total sold in last cycle
     int start_last_cycle = ds~load_uint(32); ;; last cycle start timestamp
+    JETTON_MASTER_ADDRESS = ds~load_msg_addr();
     ds.end_parse();
-    return (referrals, owner, active, total_sold, price, sold_last_cycle, start_last_cycle);
+    return (referrals, purchases, owner, active, total_sold, price, sold_last_cycle, start_last_cycle);
 }
 
 
 ;; save_data stores storage variables as a cell into persistent storage
-() save_data(cell referrals, slice owner, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) impure {
-    var ds = begin_cell().store_dict(referrals).store_slice(owner)
+() save_data(cell referrals,cell purchases, slice owner, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) impure {
+    var ds = begin_cell().store_dict(referrals).store_dict(purchases).store_slice(owner)
     .store_uint(active, 1)
     .store_coins(total_sold)
     .store_coins(price)
-    .store_coins(sold_last_cycle).store_uint(start_last_cycle, 32)
+    .store_coins(sold_last_cycle)
+    .store_uint(start_last_cycle, 32)
+    .store_slice(JETTON_MASTER_ADDRESS)
     .end_cell();
 
     set_data(ds);
+}
+
+
+() mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
+
+    var msg = begin_cell()
+    .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(JETTON_MASTER_ADDRESS)
+    .store_coins(const::tx_fee)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(21, 32)
+    .store_uint(0, 64)
+    .store_slice(recepient)
+    .store_coins(20000000)
+    .store_ref(
+        begin_cell().store_uint(0x178d4519, 32)
+        .store_uint(0, 64)
+        .store_coins(amount)
+        .store_slice(JETTON_MASTER_ADDRESS)
+        .store_uint(0, 200)
+        .store_uint(0, 67)
+        .store_coins(0)
+        .store_uint(0, 1)
+        .end_cell()
+    );
+
+    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
+
 }
 
 
@@ -107,8 +145,7 @@ const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before 
         return ();
     }
     slice sender_address = cs~load_msg_addr();
-
-    (cell referrals, slice owner, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
+    (cell referrals, cell purchases, slice owner, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
 
 
 
@@ -141,9 +178,32 @@ const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before 
             send_ton(sender_address, refund);
         }
         price = INCREASE_FACTOR(purchase_size, price);
+        (slice data, f) = purchases.udict_get?(256, slice_hash(sender_address));
+        if (f == 0) {
+            purchases~udict_set(256, slice_hash(sender_address), begin_cell().store_coins(purchase_size).end_cell().begin_parse());
+            ~dump(purchase_size);
+        } else {
+            purchases~udict_set(256, slice_hash(sender_address), begin_cell().store_coins(data~load_coins() + purchase_size).end_cell().begin_parse());
+        }
 
         emit_log_simple(op::buy_TONNEL, begin_cell().store_slice(sender_address).store_coins(purchase_size).end_cell().begin_parse());
-        save_data(referrals, owner, active, total_sold + purchase_size, price, sold_last_cycle + purchase_size, start_last_cycle);
+        save_data(referrals, purchases, owner, active, total_sold + purchase_size, price, sold_last_cycle + purchase_size, start_last_cycle);
+        return ();
+    }
+    if (op == op::claim_TONNEL) {
+        throw_unless(error::sale_not_active, active != 1); ;; sale should be inactive
+
+        (slice data, int f) = purchases.udict_get?(256, slice_hash(sender_address));
+        throw_unless(error::no_tonnel_bought, f != 0);
+        int amount = data~load_coins();
+        ~dump(1);
+        ~dump(amount);
+        throw_unless(error::no_tonnel_bought, amount != 0);
+        mint_tonnel(sender_address, amount, JETTON_MASTER_ADDRESS);
+        purchases~udict_set(256, slice_hash(sender_address), begin_cell().store_coins(0).end_cell().begin_parse());
+
+
+        save_data(referrals, purchases, owner, 0, total_sold, price, sold_last_cycle, start_last_cycle);
         return ();
     }
 
@@ -154,12 +214,12 @@ const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before 
         return ();
     }
     if (op == op::finish_sale) {
-        save_data(referrals, owner, 0, total_sold, price, sold_last_cycle, start_last_cycle);
+        save_data(referrals, purchases, owner, 0, total_sold, price, sold_last_cycle, start_last_cycle);
         return ();
     }
 
     if (op == op::start_sale) {
-        save_data(referrals, owner, 1, total_sold, price, sold_last_cycle, start_last_cycle);
+        save_data(referrals, purchases, owner, 1, total_sold, price, sold_last_cycle, start_last_cycle);
         return ();
     }
 
@@ -167,13 +227,13 @@ const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before 
 }
 
 (int, int, int, int, int) get_state() method_id {
-    (_, _, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
+    (_, _, _, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
     return (active, total_sold, price, sold_last_cycle, start_last_cycle);
 }
 
 
 (int, int) get_price() method_id {
-    (_, _, _, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
+    (_, _, _, _, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
     if (sold_last_cycle > REDUCE_PRICE_THRESHOLD * (TOTAL_SALE - total_sold) / 100) {
         return (price, 0);
     }
@@ -181,7 +241,7 @@ const REDUCE_PRICE_THRESHOLD = 1; ;; 1% of available sale should be sold before 
 }
 
 (slice) get_referral(int referralID) method_id {
-    (cell referrals, _, _, _, _, _, _) = load_data(); ;; here we populate the storage variables
+    (cell referrals, _, _, _, _, _, _, _) = load_data(); ;; here we populate the storage variables
     (slice address, int f) = referrals.udict_get?(256, referralID);
     if (f != 0) {
         return address;
