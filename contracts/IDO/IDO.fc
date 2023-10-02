@@ -177,7 +177,6 @@ global slice JETTON_MASTER_ADDRESS;
         if (refund > 0) {
             send_ton(sender_address, refund);
         }
-        price = INCREASE_FACTOR(purchase_size, price);
         (slice data, f) = purchases.udict_get?(256, slice_hash(sender_address));
         if (f == 0) {
             purchases~udict_set(256, slice_hash(sender_address), begin_cell().store_coins(purchase_size).end_cell().begin_parse());
@@ -186,7 +185,9 @@ global slice JETTON_MASTER_ADDRESS;
             purchases~udict_set(256, slice_hash(sender_address), begin_cell().store_coins(data~load_coins() + purchase_size).end_cell().begin_parse());
         }
 
-        emit_log_simple(op::buy_TONNEL, begin_cell().store_slice(sender_address).store_coins(purchase_size).end_cell().begin_parse());
+        emit_log_simple(op::buy_TONNEL, begin_cell().store_coins(purchase_size).store_coins(price).end_cell().begin_parse());
+        price = INCREASE_FACTOR(purchase_size, price);
+
         save_data(referrals, purchases, owner, active, total_sold + purchase_size, price, sold_last_cycle + purchase_size, start_last_cycle);
         return ();
     }
@@ -196,12 +197,11 @@ global slice JETTON_MASTER_ADDRESS;
         (slice data, int f) = purchases.udict_get?(256, slice_hash(sender_address));
         throw_unless(error::no_tonnel_bought, f != 0);
         int amount = data~load_coins();
-        ~dump(1);
-        ~dump(amount);
         throw_unless(error::no_tonnel_bought, amount != 0);
         mint_tonnel(sender_address, amount, JETTON_MASTER_ADDRESS);
         purchases~udict_set(256, slice_hash(sender_address), begin_cell().store_coins(0).end_cell().begin_parse());
 
+        emit_log_simple(op::claim_TONNEL, begin_cell().store_coins(amount).end_cell().begin_parse());
 
         save_data(referrals, purchases, owner, 0, total_sold, price, sold_last_cycle, start_last_cycle);
         return ();
