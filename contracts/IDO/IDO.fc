@@ -40,6 +40,9 @@ global slice JETTON_MASTER_ADDRESS;
         }
         ;; we had a cycle, but not enough was sold, so we reduce the price
         price = price * (100 - REDUCE_PERCENT) / 100;
+        if (price < MIN_PRICE) {
+            price = MIN_PRICE;
+        }
         return (price, 0, time_now);
     }
     ;; we are in the same cycle so no need to update the price
