@@ -12,7 +12,7 @@ import {TupleItemSlice} from "ton-core/dist/tuple/tuple";
 
 export type IDOConfig = {
   owner: Address;
-  referrals: { address: Address, referralID: string }[];
+  referrals: { address: Address, referralID: string, batch:string }[];
   TONNEL_MASTER: Address;
 };
 
@@ -23,12 +23,46 @@ const CellRef: DictionaryValue<Cell> = {
   parse: (src) => src.asCell(),
 }
 
+function getCashBack(batch: string) {
+  if (batch === "gold") {
+    return 40;
+  }
+  if (batch === "silver") {
+    return 25;
+  }
+  if (batch === "bronze") {
+    return 15;
+
+  }
+  if (batch === "inactiveBronze") {
+    return 10;
+  }
+  return 0
+}
+
+function getReferral(batch: string) {
+ if (batch === "gold") {
+   return 70;
+ }
+    if (batch === "silver") {
+        return 50;
+    }
+    if (batch === "bronze") {
+        return 30;
+
+    }
+    if (batch === "inactiveBronze") {
+        return 20;
+    }
+    return 10
+}
+
 export function IDOConfigToCell(config: IDOConfig): Cell {
   const empty = Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef)
   config.referrals.forEach((item) => {
     empty.set(
       BigInt("0x" + beginCell().storeStringTail(item.referralID).endCell().hash().toString('hex')),
-      beginCell().storeAddress(item.address).endCell()
+      beginCell().storeUint(getCashBack(item.batch),8).storeUint(getReferral(item.batch),8).storeAddress(item.address).endCell()
     )
   })
   const unixTime = Math.floor(new Date().getTime() / 1000);
@@ -102,6 +136,14 @@ export class IDO implements Contract {
       body: beginCell().storeUint(Opcodes.finish_sale, 32).storeUint(0, 64).endCell(),
     });
   }
+  async sendStartSale(provider: ContractProvider, via: Sender, value: bigint) {
+    await provider.internal(via, {
+      value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell().storeUint(Opcodes.start_sale, 32).storeUint(0, 64).endCell(),
+    });
+  }
+
 
 
   async getBalance(provider: ContractProvider) {
@@ -128,6 +170,14 @@ export class IDO implements Contract {
     return result.stack.readBigNumber();
   }
 
-
+  async getTONNELPurchased(provider: ContractProvider, sender:Address) {
+    const result = await provider.get('get_purchased', [
+      {type: 'slice',
+        cell: beginCell().storeAddress(sender).endCell()
+      },
+    ]);
+    console.log(result.stack)
+    return result.stack.readBigNumber();
+  }
 
 }
