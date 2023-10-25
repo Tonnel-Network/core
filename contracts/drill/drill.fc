@@ -1,0 +1,291 @@
+#include "../imports/stdlib.fc";
+#include "../jetton/imports/jetton-utils.fc";
+#include "../jetton/imports/op-codes.fc";
+
+;; TONNEL Drill smart contract
+const TONNEL_PER_SECOND = 6900000; ;; 0.0069 TONNELs / second ;; 25 TONNEL every hour
+const FINAL_TIME = 1714305600; ;; Sun Apr 28 2024 12:00:00 GMT+0000( 6 months after deploy )
+;;const START_TIME = 1698490800; ;;Sat Oct 28 2023 11:00:00 GMT+0000
+const START_TIME = 1698145200; ;;Sat Oct 28 2023 11:00:00 GMT+0000
+const op::withdraw = "op::withdraw"c;
+const const::tx_fee_send_jetton = 45000000; ;; 0.045 TON
+
+
+const error::jetton_ivalid = 103;
+const error::drill_finished = 104;
+
+
+() send_jetton(slice recepient, int amount, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
+    if (amount == 0) {
+        return ();
+    }
+    slice jetton_wallet = calculate_user_jetton_wallet_address(my_address(), JETTON_MASTER_ADDRESS, JETTON_BYTE_CODE);
+
+    var msg = begin_cell()
+    .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(jetton_wallet)
+    .store_coins(const::tx_fee_send_jetton)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(op::transfer(), 32)
+    .store_uint(0, 64)
+    .store_coins(amount)
+    .store_slice(recepient)
+    .store_uint(0, 2)
+    .store_uint(0, 1)
+    .store_coins(0)
+    .store_uint(0, 1);
+    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
+
+}
+
+
+() mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
+
+    var msg = begin_cell()
+    .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(JETTON_MASTER_ADDRESS)
+    .store_coins(const::tx_fee_send_jetton)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(op::mint(), 32)
+    .store_uint(0, 64)
+    .store_slice(recepient)
+    .store_coins(20000000)
+    .store_ref(
+        begin_cell().store_uint(op::internal_transfer(), 32)
+        .store_uint(0, 64)
+        .store_coins(amount)
+        .store_slice(JETTON_MASTER_ADDRESS)
+        .store_uint(0, 200)
+        .store_uint(0, 67)
+        .store_coins(0)
+        .store_uint(0, 1)
+        .end_cell()
+    );
+
+    send_raw_message(msg.end_cell(), 2); ;; paying fees, don't revert on errors
+
+}
+
+(slice, cell, cell, cell) load_data() impure inline {
+    var ds = get_data().begin_parse();
+    return (
+        ds~load_msg_addr(), ;; owner address
+        ds~load_dict(), ;; drill mapping (hash of address => (lp amount, reward debt))
+        ds~load_ref(), ;; jetton data (tonnel minter address, LP token address, LP token code)
+        ds~load_ref() ;; drill dynamic general number(lastRewardTime, generalAccTONNELPerShare, currentTotalDrillPower)
+
+    );
+}
+
+() save_data(slice owner, cell jetton_data, cell dynamic_stats, cell drill_data) impure inline {
+    set_data(
+        begin_cell().store_slice(owner)
+        .store_dict(drill_data)
+        .store_ref(jetton_data)
+        .store_ref(dynamic_stats)
+        .end_cell()
+    );
+}
+
+(slice, slice, cell, int, int, int) unpack_data(cell jetton_data, cell dynamic_stats) impure inline {
+    slice jetton_ds = jetton_data.begin_parse();
+    slice tonnel_minter_address = jetton_ds~load_msg_addr();
+    slice lp_address = jetton_ds~load_msg_addr();
+    cell lp_code = jetton_ds~load_ref();
+
+    slice dynamic_stats_ds = dynamic_stats.begin_parse();
+    int lastRewardTime = dynamic_stats_ds~load_uint(64);
+    int generalAccTONNELPerShare = dynamic_stats_ds~load_uint(256);
+    int currentTotalDrillPower = dynamic_stats_ds~load_uint(256);
+
+    return (tonnel_minter_address, lp_address, lp_code, lastRewardTime, generalAccTONNELPerShare, currentTotalDrillPower);
+}
+
+
+
+(cell) pack_data(int lastRewardTime, int generalAccTONNELPerShare, int currentTotalDrillPower) inline {
+
+
+    cell general_stats = begin_cell()
+    .store_uint(lastRewardTime, 64)
+    .store_uint(generalAccTONNELPerShare, 256)
+    .store_uint(currentTotalDrillPower, 256)
+    .end_cell();
+
+    return (general_stats);
+}
+
+
+() update_pool() impure inline {
+    var (owner, drill_data, jetton_data, dynamic_stats) = load_data();
+    var (_, _, _, lastRewardTime, generalAccTONNELPerShare, currentTotalDrillPower) = unpack_data(jetton_data, dynamic_stats);
+    if (now() <= lastRewardTime) {
+        return ();
+    }
+    if (currentTotalDrillPower == 0) {
+        lastRewardTime = now();
+        save_data(owner, jetton_data, pack_data(
+            lastRewardTime,
+            generalAccTONNELPerShare,
+            currentTotalDrillPower),
+            drill_data);
+        return ();
+    }
+    int multiplier = now() - lastRewardTime;
+    var TONNEL_reward = multiplier * TONNEL_PER_SECOND;
+    generalAccTONNELPerShare += TONNEL_reward * 1000000000000 / currentTotalDrillPower;
+    lastRewardTime = now();
+    save_data(owner,
+        jetton_data,
+        pack_data(
+            lastRewardTime,
+            generalAccTONNELPerShare,
+            currentTotalDrillPower),
+        drill_data);
+}
+
+
+() deposit(slice sender_address, int amount) impure inline {
+    update_pool();
+    var (owner, drill_data, jetton_data, dynamic_stats) = load_data();
+    var (_, _, _, lastRewardTime, generalAccTONNELPerShare, currentTotalDrillPower) = unpack_data(jetton_data, dynamic_stats);
+    currentTotalDrillPower += amount;
+
+    (slice data, int f) = drill_data.udict_get?(256, slice_hash(sender_address));
+    var drill_power = 0;
+    var reward_debt = 0;
+    if (f != 0) {
+        drill_power = data~load_uint(256);
+        reward_debt = data~load_uint(256);
+    }
+
+    drill_power += amount;
+    reward_debt += amount * generalAccTONNELPerShare / 1000000000000;
+    drill_data~udict_set(256, slice_hash(sender_address), begin_cell()
+    .store_uint(drill_power, 256)
+    .store_uint(reward_debt, 256)
+    .end_cell().begin_parse());
+    save_data(owner,
+        jetton_data,
+        pack_data(
+            lastRewardTime,
+            generalAccTONNELPerShare,
+            currentTotalDrillPower),
+        drill_data);
+}
+
+() withdraw(slice sender_address, int amount) impure inline {
+    if (amount < 0) {
+        return ();
+    }
+    update_pool();
+    var (owner, drill_data, jetton_data, dynamic_stats) = load_data();
+    var (tonnel_minter, lp_minter, lp_code, lastRewardTime, generalAccTONNELPerShare, currentTotalDrillPower) = unpack_data(jetton_data, dynamic_stats);
+
+
+    (slice data, int f) = drill_data.udict_get?(256, slice_hash(sender_address));
+    if (f == 0) {
+        return ();
+    }
+
+    var drill_power = data~load_uint(256);
+    if (drill_power < amount) {
+        amount = drill_power;
+    }
+    var reward_debt = data~load_uint(256);
+
+
+    if (amount > 0) {
+
+        currentTotalDrillPower -= amount;
+        ;; transfer drill_power jetton to sender_address
+        send_jetton(sender_address, amount, lp_minter, lp_code);
+    }
+
+    int accumulatedTONNEL = drill_power * generalAccTONNELPerShare / 1000000000000;
+    int total_pending = accumulatedTONNEL - reward_debt;
+    ;; update sender_address's reward debt
+    reward_debt = accumulatedTONNEL - (amount * generalAccTONNELPerShare / 1000000000000);
+    drill_power -= amount;
+
+    if (total_pending > 0) {
+        ;; mint claimable reward to sender_address
+        mint_tonnel(sender_address, total_pending, tonnel_minter);
+    }
+
+
+    drill_data~udict_set(256, slice_hash(sender_address), begin_cell()
+    .store_uint(drill_power, 256)
+    .store_uint(reward_debt, 256)
+    .end_cell().begin_parse());
+
+    save_data(owner,
+        jetton_data,
+        pack_data(
+            lastRewardTime,
+            generalAccTONNELPerShare,
+            currentTotalDrillPower),
+        drill_data);
+
+}
+
+() recv_internal(cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        ;; ignore empty messages
+        return ();
+    }
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) {
+        ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+
+    if (op == op::transfer_notification()) {
+        if (now() > FINAL_TIME) {
+            throw(error::drill_finished);
+        }
+        var (_, _ , jetton_data, dynamic_stats) = load_data();
+        var (_, lp_minter, lp_code, _, _, _) = unpack_data(jetton_data, dynamic_stats);
+        throw_unless(error::jetton_ivalid, equal_slices(sender_address, calculate_user_jetton_wallet_address(my_address(), lp_minter, lp_code)));
+        int lp_amount = in_msg_body~load_coins(); ;; Jettons send
+        slice origin_sender = in_msg_body~load_msg_addr(); ;; transfer origin address
+        deposit(origin_sender, lp_amount);
+        return ();
+    }
+
+    if (op == op::withdraw) {
+        int amount = in_msg_body~load_uint(256);
+        withdraw(sender_address, amount);
+        return ();
+    }
+
+    throw(0xffff);
+}
+
+;; Get methods
+
+(int, int, int, int) get_user_state(slice user) method_id {
+    var (_, drill_data, jetton_data, dynamic_stats) = load_data();
+    var (_, _, _, lastRewardTime, generalAccTONNELPerShare, currentTotalDrillPower) = unpack_data(jetton_data, dynamic_stats);
+
+    (slice data, int f) = drill_data.udict_get?(256, slice_hash(user));
+
+    if (f == 0) {
+        return (0, 0, 0, currentTotalDrillPower);
+    }
+
+    var drill_power = data~load_uint(256);
+    var reward_debt = data~load_uint(256);
+
+
+    int accumulatedTONNEL = drill_power * generalAccTONNELPerShare / 1000000000000;
+    int total_pending = accumulatedTONNEL - reward_debt;
+
+    return (drill_power, reward_debt, total_pending, currentTotalDrillPower);
+
+}
