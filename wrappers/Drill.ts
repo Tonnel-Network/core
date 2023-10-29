@@ -32,6 +32,7 @@ export function drillConfigToCell(config: DrillConfig): Cell {
 
 export const Opcodes = {
   withdraw: 3406020527,
+  emeregency_withdraw: 3831112322,
 };
 // const error::unknown_op = 101;
 // const error::access_denied = 102;
@@ -82,11 +83,31 @@ export class Drill implements Contract {
       body: beginCell()
         .storeUint(Opcodes.withdraw, 32)
         .storeUint(opts.queryID ?? 0, 64)
-        .storeUint(opts.amount, 256)
+        .storeCoins(opts.amount)
         .endCell(),
     });
   }
 
+
+  async sendEmergencyWithdraw(
+      provider: ContractProvider,
+      via: Sender,
+      opts: {
+        value: bigint;
+        queryID?: number;
+        amount: bigint;
+      }
+  ) {
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell()
+          .storeUint(Opcodes.emeregency_withdraw, 32)
+          .storeUint(opts.queryID ?? 0, 64)
+          .storeCoins(opts.amount)
+          .endCell(),
+    });
+  }
   async getBalance(provider: ContractProvider) {
     const result = await provider.getState();
     return result.balance;
@@ -99,8 +120,7 @@ export class Drill implements Contract {
           cell: beginCell().storeAddress(sender).endCell()
         },
       ]);
-      console.log(result.stack)
-      return result.stack.readNumber();
+      return [result.stack.readBigNumber(), result.stack.readBigNumber(), result.stack.readBigNumber(), result.stack.readBigNumber(), result.stack.readBigNumber()];
     } catch (e) {
       return 0;
     }
