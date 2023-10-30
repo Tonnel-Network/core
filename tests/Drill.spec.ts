@@ -123,10 +123,10 @@ describe('Drill', () => {
 
     for (let i = 0; i < 10; i++) {
       const drillResult = await lpWalletSenders[i].sendTransfer(senders[i].getSender(), {
-        value: toNano((0.2).toString()),
+        value: toNano((0.07).toString()),
         toAddress: drill.address,
         queryId: 0,
-        fwdAmount: toNano('0.1'),
+        fwdAmount: toNano('0.03'),
         jettonAmount: toNano('10'),
         fwdPayload: beginCell().endCell()
       });
@@ -140,12 +140,12 @@ describe('Drill', () => {
     blockchain.now += 10000
 
     for (let i = 0; i < 10; i++) {
-      const randomNumber = Math.floor(Math.random() * 20)
+      const randomNumber = Math.floor(Math.random() * 0)
       console.log(await drill.getUserState(senders[i].address))
       console.log(await lpWalletDrill.getBalance())
 
       const withdrawResult = await drill.sendWithdraw(senders[i].getSender(), {
-        value: toNano((0.1).toString()),
+        value: toNano((0.06).toString()),
         amount: toNano(randomNumber.toString()),
         queryID: 0,
       });

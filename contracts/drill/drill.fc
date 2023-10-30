@@ -2,9 +2,10 @@
 #include "../jetton/imports/jetton-utils.fc";
 #include "../jetton/imports/op-codes.fc";
 
-;; TONNEL Drill smart contract
-const TONNEL_PER_SECOND = 6900000; ;; 0.0069 TONNELs / second ;; 25 TONNEL every hour
+;; TONNEL Drill smart contract(config for Dedust LP token)
+const TONNEL_PER_SECOND = 4420000; ;; 0.00442 TONNELs / second ;; 15.91 TONNEL every hour
 const FINAL_TIME = 1714305600; ;; Sun Apr 28 2024 12:00:00 GMT+0000( 6 months after deploy )
+
 const op::withdraw = "op::withdraw"c;
 const op::deposit = "op::deposit"c;
 const op::withdraw_emergency = "op::withdraw_emergency"c;
@@ -303,7 +304,10 @@ const error::not_yet = 106;
 (int, int, int, int, int) get_user_state(slice user) method_id {
     var (_, drill_data, jetton_data, dynamic_stats) = load_data();
     var (_, _, _, lastRewardTime, generalAccTONNELPerShare, currentTotalDrillPower) = unpack_data(jetton_data, dynamic_stats);
+    int multiplier = now() - lastRewardTime;
 
+    var TONNEL_reward = multiplier * TONNEL_PER_SECOND;
+    generalAccTONNELPerShare += TONNEL_reward * 1000000000000 / currentTotalDrillPower;
     (slice data, int f) = drill_data.udict_get?(256, slice_hash(user));
 
     if (f == 0) {
