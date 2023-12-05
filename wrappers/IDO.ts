@@ -23,7 +23,7 @@ const CellRef: DictionaryValue<Cell> = {
   parse: (src) => src.asCell(),
 }
 
-function getCashBack(batch: string) {
+export function getCashBack(batch: any) {
   if (batch === "gold") {
     return 40;
   }
@@ -37,10 +37,13 @@ function getCashBack(batch: string) {
   if (batch === "inactiveBronze") {
     return 10;
   }
+  if(batch?.cashBack) {
+    return batch.cashBack
+  }
   return 0
 }
 
-function getReferral(batch: string) {
+export function getReferral(batch: any) {
  if (batch === "gold") {
    return 70;
  }
@@ -54,18 +57,23 @@ function getReferral(batch: string) {
     if (batch === "inactiveBronze") {
         return 20;
     }
+  if(batch?.referral) {
+    return batch.referral
+  }
     return 10
 }
 
 export function IDOConfigToCell(config: IDOConfig): Cell {
   const empty = Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef)
   config.referrals.forEach((item) => {
+    // console.log(item.referralID)
+
     empty.set(
       BigInt("0x" + beginCell().storeStringTail(item.referralID).endCell().hash().toString('hex')),
       beginCell().storeUint(getCashBack(item.batch),8).storeUint(getReferral(item.batch),8).storeAddress(item.address).endCell()
     )
   })
-  const unixTime = Math.floor(new Date().getTime() / 1000);
+  const unixTime = Math.floor(Date.now() / 1000)
 
   return beginCell().storeDict(empty).storeDict(null).storeAddress(config.owner).storeBit(1).storeCoins(0).storeCoins(toNano('1')).storeCoins(0).storeUint(unixTime,32).storeAddress(config.TONNEL_MASTER).endCell()
 }
@@ -76,6 +84,7 @@ export const Opcodes = {
   finish_sale: 1641017685,
   start_sale: 3164944080,
   claim_TONNEL: 4060617894,
+  set_ref: 6011238,
 };
 export const ERRORS = {
   not_staked: 700,
@@ -144,6 +153,27 @@ export class IDO implements Contract {
     });
   }
 
+  async sendSetRef(provider: ContractProvider, via: Sender, opts: {
+    value: bigint;
+    referralID: string;
+    cashBack: number;
+    referral: number;
+    wallet: Address;
+
+  }) {
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell().storeUint(Opcodes.set_ref, 32)
+          .storeUint(0, 64)
+          .storeUint(BigInt("0x" + beginCell().storeStringTail(opts.referralID).endCell().hash().toString('hex')),256)
+          .storeUint(opts.cashBack,8)
+          .storeUint(opts.referral,8)
+          .storeAddress(opts.wallet)
+          .endCell(),
+    });
+  }
+
 
 
   async getBalance(provider: ContractProvider) {
@@ -163,11 +193,22 @@ export class IDO implements Contract {
   }
 
   async getReferral(provider: ContractProvider, referrerId:string) {
-    const result = await provider.get('get_referral', [
-      {type: 'int', value: BigInt("0x" + beginCell().storeStringTail(referrerId).endCell().hash().toString('hex'))},
-    ]);
-    console.log(result.stack)
-    return result.stack.readBigNumber();
+    try {
+      const result = await provider.get('get_referral', [
+        {type: 'int', value: BigInt("0x" + beginCell().storeStringTail(referrerId).endCell().hash().toString('hex'))},
+      ]);
+      const resultCell = result.stack.readCell()
+
+      const resultSlice = resultCell.beginParse()
+      return {
+        cashBack: resultSlice.loadUint(8) / 1000,
+        referral: resultSlice.loadUint(8) / 1000,
+        address: resultSlice.loadAddress().toString(),
+      }
+    } catch (e) {
+      return false
+    }
+
   }
 
   async getTONNELPurchased(provider: ContractProvider, sender:Address) {

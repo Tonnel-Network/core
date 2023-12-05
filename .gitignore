@@ -133,3 +133,5 @@ dist
 
 build/transfer circom/circuit_final.zkey
 temp
+
+.DS_Store

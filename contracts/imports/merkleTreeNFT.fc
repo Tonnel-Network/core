@@ -23,182 +23,23 @@ const error::verify_failed_input = 108;
 const error::invalid_id = 109;
 const error::finished = 110;
 ;; other
-const const::tx_fee = 900000000; ;; 0.9 TON
 const const::tx_fee_send_nft = 40000000; ;; 0.04 TON
 
 const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
-(slice) numbers_to_string(int left, int right) inline {
-    builder b = begin_cell();
-    int lenL = 0;
-    int lenR = 0;
-    int copy = left;
-    int maskR = 1;
-    int maskL = 1;
-
-    while (copy > 0) {
-        copy = copy >> 4;
-        if (lenL) {
-            maskL = maskL << 4;
-        }
-        lenL += 1;
-
-    }
-    copy = right;
-    while (copy > 0) {
-        copy = copy >> 4;
-        if (lenR) {
-            maskR = maskR << 4;
-        }
-        lenR += 1;
-    }
-    repeat (64 - lenL) {
-        b~store_uint(0, 4);
-    }
-    repeat (lenL) {
-        int digit = left / maskL;
-        b~store_uint(digit, 4);
-        left = left % maskL;
-        maskL = maskL >> 4;
-    }
-    repeat (64 - lenR) {
-        b~store_uint(0, 4);
-    }
-    repeat (lenR) {
-        int digit = right / maskR;
-        b~store_uint(digit, 4);
-        right = right % maskR;
-        maskR = maskR >> 4;
-    }
-
-    return b.end_cell().begin_parse();
-}
-
-(int) sha256LeftRight(int left, int right) inline {
-    slice s = numbers_to_string(left, right);
-    int res = string_hash(s) % 52435875175126190479447740508185965837690552500527637822603658699938581184513;
-    return res;
-}
-
-(int) sha256LeftRightSlice(slice left, slice right) inline {
-    slice s = numbers_to_string(left~load_uint(256), right~load_uint(256));
-    int res = string_hash(s) % 52435875175126190479447740508185965837690552500527637822603658699938581184513;
-    return res;
-}
-
-(int, cell) construct_tree(int init, cell merkle_data_cell) impure  {
-    slice merkle_data = merkle_data_cell.begin_parse();
-    int current_zero_value = ZERO_VALUE;
-    cell zeros = new_dict();
-    cell filled_subtrees = new_dict();
-    cell roots = new_dict();
-    slice current_zero = begin_cell().store_uint(current_zero_value, 256).end_cell().begin_parse();
-    int i = init;
-
-    if (merkle_data.slice_bits() > 0){
-        current_zero_value = merkle_data~load_uint(256);
-        zeros = merkle_data~load_dict();
-        filled_subtrees = merkle_data~load_dict();
-        roots = merkle_data~load_dict();
-        current_zero = begin_cell().store_uint(current_zero_value, 256).end_cell().begin_parse();
-    } else {
-        zeros~udict_set(8, 0, current_zero);
-        filled_subtrees~udict_set(8, 0, current_zero);
-        i = i + 1;
-
-    }
 
 
 
-    while ((i < 20) & ( i - init < 10)) {
-        current_zero_value = sha256LeftRightSlice(current_zero, current_zero);
-        current_zero = begin_cell().store_uint(current_zero_value, 256).end_cell().begin_parse();
-
-        zeros~udict_set(8, i, current_zero);
-
-        filled_subtrees~udict_set(8, i, current_zero);
-        i = i + 1;
-
-    }
-
-    if(i == 20){
-
-        roots~udict_set(8, 0, begin_cell().store_uint(sha256LeftRightSlice(current_zero, current_zero), 256).end_cell().begin_parse());
-        return (i, begin_cell().store_uint(0, 8).store_uint(0, 32).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell()); ;;currentRootIndex  = 0, nextIndex =0
-
-    }
-    return (i, begin_cell().store_uint(current_zero_value, 256).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell());
-}
-
-(int,int, cell) insert(int leaf, int init, cell merkle_data_cell) impure {
+(int, cell) insert(int root, cell merkle_data_cell) impure {
     slice merkle_data = merkle_data_cell.begin_parse();
     int currentRootIndex = merkle_data~load_uint(8);
     int nextIndex = merkle_data~load_uint(32);
-    cell zeros = merkle_data~load_dict();
-    cell filled_subtrees = merkle_data~load_dict();
     cell roots = merkle_data~load_dict();
-    int currentIndex = nextIndex;
-    int current_level_hash = leaf;
-    int left = 0;
-    int right = 0;
-    int i = 0;
 
-    if(init == 0) {
-        cell backup_cell = merkle_data~load_ref();
-        slice backup = backup_cell.begin_parse();
-        current_level_hash = backup~load_uint(256);
-        left = backup~load_uint(256);
-        right = backup~load_uint(256);
-        i = backup~load_uint(8);
-        currentIndex = backup~load_uint(32);
-    }
-
-
-
-
-    while (((init == 1) & (i < 10)) | ((init == 0) & (i < 20))) {
-        if (currentIndex % 2 == 0) {
-            left = current_level_hash;
-            (slice right_slice, _) = zeros.udict_get?(8, i);
-            right = right_slice~load_uint(256);
-            filled_subtrees~udict_set(8, i, begin_cell().store_uint(current_level_hash, 256).end_cell().begin_parse());
-        } else {
-            (slice left_slice, _) = filled_subtrees.udict_get?(8, i);
-            left = left_slice~load_uint(256);
-            right = current_level_hash;
-        }
-
-        current_level_hash = sha256LeftRight(left, right);
-        currentIndex = currentIndex / 2;
-
-        i = i + 1;
-    }
-    if( i == 20){
-        currentRootIndex = (currentRootIndex + 1) % 100;
-        roots~udict_set(8, currentRootIndex, begin_cell().store_uint(current_level_hash, 256).end_cell().begin_parse());
-        nextIndex = nextIndex + 1;
-        return (nextIndex - 1, 20, begin_cell().store_uint(currentRootIndex, 8).store_uint(nextIndex, 32).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell());
-
-    }
-
-
-    return (nextIndex, 21,
-            begin_cell()
-                    .store_uint(currentRootIndex, 8)
-                    .store_uint(nextIndex, 32)
-                    .store_dict(zeros)
-                    .store_dict(filled_subtrees)
-                    .store_dict(roots)
-                    .store_ref(begin_cell()
-                                       .store_uint(current_level_hash, 256)
-                                       .store_uint(left, 256)
-                                       .store_uint(right, 256)
-                                       .store_uint(i, 8)
-                                       .store_uint(currentIndex, 32)
-                                       .end_cell())
-                    .end_cell());
-
-
+    currentRootIndex = (currentRootIndex + 1) % 100;
+    roots~udict_set(8, currentRootIndex, begin_cell().store_uint(root, 256).end_cell().begin_parse());
+    nextIndex = nextIndex + 1;
+    return (nextIndex - 1, begin_cell().store_uint(currentRootIndex, 8).store_uint(nextIndex, 32).store_dict(roots).end_cell());
 }
 
 
@@ -211,15 +52,12 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     }
     (_, _, _, _, _, cell zk_info) = load_data();
     slice zk_info_slice = zk_info.begin_parse();
-    int init = zk_info_slice~load_uint(8);
     zk_info_slice~load_ref();
     cell merkle_cell = zk_info_slice~load_ref();
 
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
     merkle~load_uint(32);
-    merkle~load_dict();
-    merkle~load_dict();
     cell roots = merkle~load_dict();
 
     int i = currentRootIndex;
@@ -255,24 +93,26 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
 }
 
-(int) get_last_root() method_id {
-    (_, _, _, _, _, cell zk_info) = load_data();
+(int, int) get_last_root_handler(zk_info) impure {
     slice zk_info_slice = zk_info.begin_parse();
-    int init = zk_info_slice~load_uint(8);
     zk_info_slice~load_ref();
 
     cell merkle_cell = zk_info_slice~load_ref();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
-    merkle~load_uint(32);
-    merkle~load_dict();
-    merkle~load_dict();
+    int last_index = merkle~load_uint(32);
     cell roots = merkle~load_dict();
     (slice root_slice, int found) = roots.udict_get?(8, currentRootIndex);
     if(found == 0){
-        return 0;
+        return (0, last_index);
     }
-    return root_slice~load_uint(256);
+    return (root_slice~load_uint(256), last_index);
+}
+
+(int) get_last_root() method_id {
+    (_, _, _, _, _, cell zk_info) = load_data();
+    (int last_root, _) = get_last_root_handler(zk_info);
+    return last_root;
 }
 
 (int) get_root_known(int root) method_id {

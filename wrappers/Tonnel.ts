@@ -21,7 +21,7 @@ export function tonnelConfigToCell(config: TonnelConfig): Cell {
 
   return beginCell().storeUint(0, 8)
     .storeRef(beginCell().endCell())
-    .storeRef(beginCell().storeAddress(config.ownerAddress).storeUint(20, 10).endCell())
+    .storeRef(beginCell().storeAddress(config.ownerAddress).storeUint(15, 10).endCell())
     .storeDict(null)
     .storeRef(
       beginCell()

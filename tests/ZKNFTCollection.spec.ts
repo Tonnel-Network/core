@@ -1,52 +1,41 @@
 import {Blockchain, SandboxContract} from '@ton-community/sandbox';
-import {beginCell, Cell, toNano} from 'ton-core';
+import {Address, beginCell, Cell, toNano} from 'ton-core';
 import '@ton-community/test-utils';
 import {compile} from '@ton-community/blueprint';
 import {ZKNFTCollection} from "../wrappers/ZKNFTCollection";
-import {groth16, rbuffer, toBigIntLE} from "../utils/circuit";
-import {MerkleTree, Sha256} from "../utils/merkleTree";
+import {
+  groth16,
+  rbuffer,
+  toBigIntLE,
+  unstringifyBigInts
+} from "../utils/circuit";
+import {bitsToNumber, mimcHash, mimcHash2, Sha256} from "../utils/merkleTree";
 import path from "path";
 import {parseG1Func, parseG2Func} from "./Tonnel.spec";
 import {NFTItem} from "../wrappers/NFTItem";
 import {JettonMinter} from "../wrappers/JettonMinter";
 import {JettonWallet} from "../wrappers/JettonWallet";
 const wasmPath = path.join(__dirname, "../build/transfer circom/circuit.wasm");
+const wasmPathInsert = path.join(__dirname, "../build/insert/circuit.wasm");
 const wasmPathReveal = path.join(__dirname, "../build/reveal circom/circuit.wasm");
 const zkeyPath = path.join(__dirname, "../build/transfer circom/circuit_final.zkey");
+const zkeyPathInsert = path.join(__dirname, "../build/insert/circuit_final.zkey");
 const zkeyPathReveal = path.join(__dirname, "../build/reveal circom/circuit_final.zkey");
+
 const vkeyPath = path.join(__dirname, "../build/transfer circom/verification_key.json");
 const vkeyRevealPath = path.join(__dirname, "../build/reveal circom/verification_key.json");
-
+const vkeyInsertPath = path.join(__dirname, "../build/insert/verification_key.json");
+import MerkleTree from 'fixed-merkle-tree';
 // import a json file
 const vkey = require(vkeyPath);
 const vkeyReveal = require(vkeyRevealPath);
+const vkeyInsert = require(vkeyInsertPath);
 
 describe('ZKNFTCollection', () => {
   let code: Cell;
   let codeItem: Cell;
   let codeWallet: Cell;
   let codeMaster: Cell;
-  async function merkleInitialize() {
-    const initSlice = 2;
-    for (let i = 0; i < initSlice; i++) {
-      // console.log(`init ${i + 1}/${initSlice}`);
-
-      const init_account = await blockchain.treasury('increaser' + i);
-
-
-      const increaseResult = await nftCollection.sendContinue(init_account.getSender(), {
-        value: toNano('0.8'),
-      });
-
-      expect(increaseResult.transactions).toHaveTransaction({
-        from: init_account.address,
-        to: nftCollection.address,
-        success: true,
-      });
-
-
-    }
-  }
 
   beforeAll(async () => {
     code = await compile('ZKNFTCollection');
@@ -80,6 +69,12 @@ describe('ZKNFTCollection', () => {
       nftItemCode: codeItem,
       masterJetton: jettonMinter.address,
       jettonWalletCell: codeWallet,
+      discounts: [
+        (await blockchain.treasury('sender1')).address,
+        (await blockchain.treasury('sender2')).address,
+        (await blockchain.treasury('sender3')).address,
+        (await blockchain.treasury('sender4')).address,
+      ]
     }, code));
     await jettonMinter.sendMintAccess((await blockchain.treasury('owner')).getSender(),{
       value: toNano('0.02'),
@@ -97,51 +92,62 @@ describe('ZKNFTCollection', () => {
       success: true,
     });
 
-    await merkleInitialize();
 
 
   });
   const mintNFT = async (id: number, secret: bigint, tree: MerkleTree) => {
-    const minter = await blockchain.treasury('minter');
     const owner = await blockchain.treasury('owner');
-    const commitment = Sha256(id.toString(), secret.toString());
-    const rootInit = await nftCollection.getLastRoot();
-    expect(BigInt(tree.root())).toEqual(rootInit);
+    const commitment = mimcHash2(BigInt(id), secret);
+    // const rootInit = await nftCollection.getLastRoot();
+    // expect(BigInt(tree.root())).toEqual(rootInit);
     // console.log(await nftCollection.getBalance() / 1000000n);
-    await jettonMinter.sendMint(
-      owner.getSender()
-      ,  {
-      toAddress: minter.address,
-      jettonAmount: toNano('1000'),
-      amount: toNano('0.02'),
-      queryId: 1,
-      value: toNano('0.05')
-
-    });
-
-    const jettonWalletMinter = blockchain.openContract(
-      JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(minter.address)))
-  const jettonWalletOwner = blockchain.openContract(
-      JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(owner.address)))
 
 
-    let mintResult = await jettonWalletMinter.sendTransfer(minter.getSender(), {
-      value: toNano('1.45'),
-      toAddress: nftCollection.address,
-      queryId: 0,
-      fwdAmount: toNano('1.4'),
-      jettonAmount: toNano('1000'),
-      fwdPayload: beginCell()
-        .storeCoins(toNano('0.02')) // gas fee
-        .storeRef(beginCell().storeUint(BigInt(commitment), 256).storeUint(id, 32).endCell())
-        .endCell(),
-    });
-    console.log(await jettonWalletMinter.getBalance())
-    console.log(await jettonWalletOwner.getBalance())
-    expect(mintResult.transactions).toHaveTransaction({
-      from: nftCollection.address,
-      to: nftCollection.address,
-      success: true
+  //   const jettonWalletMinter = blockchain.openContract(
+  //     JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(minter.address)))
+  // const jettonWalletOwner = blockchain.openContract(
+  //     JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(owner.address)))
+
+    const old_root = tree.root;
+
+    tree.insert(commitment);
+
+    const root = tree.root;
+    const { pathElements, pathIndices } = tree.path(tree.elements.length - 1)
+
+
+    let input = {
+      oldRoot: old_root,
+      newRoot: root,
+      leaf: commitment,
+      pathIndices: tree.elements.length - 1,
+      pathElements: pathElements,
+    }
+    // console.log(input)
+    const time = Date.now()
+    let {proof, publicSignals} = await groth16.fullProve(input,
+        wasmPathInsert, zkeyPathInsert);
+    // console.log(proof, publicSignals)
+    // console.log(Date.now() - time)
+    let verify = await groth16.verify(vkeyInsert, publicSignals, proof);
+    expect(verify).toEqual(true);
+      let B_x = proof.pi_b[0].map((num: string) => BigInt(num))
+      let B_y = proof.pi_b[1].map((num: string) => BigInt(num))
+
+    let mintResult = await nftCollection.sendMintOwner(owner.getSender(), {
+      value: toNano('0.2'),
+      fwd_amount: toNano('0.02'),
+      payload: beginCell().storeUint(BigInt(commitment), 256)
+          .storeUint(id, 32)
+          .storeUint(BigInt(root), 256)
+          .storeRef(
+              beginCell()
+                  .storeRef(parseG1Func(proof.pi_a.slice(0,2).map((num: string ) => BigInt(num))))
+                  .storeRef(parseG2Func(B_x[0], B_x[1], B_y))
+                  .storeRef(parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num)))
+                  )
+                  .endCell())
+          .endCell(),
     });
     const nftAddress = await nftCollection.getAddress(BigInt(id));
     const nftItemContract = blockchain.openContract(
@@ -153,10 +159,8 @@ describe('ZKNFTCollection', () => {
     });
 
 
-    tree.insert(commitment);
-
     const rootAfter = await nftCollection.getLastRoot();
-    expect(BigInt(tree.root())).toEqual(rootAfter);
+    expect(BigInt(tree.root)).toEqual(rootAfter);
     // console.log(await nftCollection.getBalance() / 1000000n);
 
     const ownerNFT = await nftItemContract.getOwner();
@@ -164,43 +168,150 @@ describe('ZKNFTCollection', () => {
     return {commitment};
   }
   it('should deploy and then mint', async () => {
-    const tree = new MerkleTree(20);
-    for (let i = 0; i < 10; i++) {
+    const tree = new MerkleTree(20, [], {
+      hashFunction: mimcHash2,
+        zeroElement: '21663839004416932945382355908790599225266501822907911457504978515578255421292',
+    });
+    const listSecrets= [];
+    const prices = []
+    for (let i = 1; i < 34; i++) {
       const randomBuf = rbuffer(31);
       const secret = toBigIntLE(randomBuf);
       const id = i;
+      listSecrets.push(secret);
+      // ;;(333 + 66 * level)
 
+      prices.push(333 + 66 * i);
       const {commitment} = await mintNFT(id, secret, tree);
     }
+    console.log(await nftCollection.getBalance())
+    const jettonWalletCollection = blockchain.openContract(
+        JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(nftCollection.address)))
+    const burnJettonWallet = blockchain.openContract(
+        JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(Address.parse(
+            'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'
+        ))))
+    for (let i = 1; i < 50; i++) {
+
+      const sender = await blockchain.treasury('sender' + i);
+      const owner = await blockchain.treasury('owner');
+      const jettonWalletSender = blockchain.openContract(
+          JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(sender.address)))
+
+      const resultMint = await jettonMinter.sendMint(
+        owner.getSender()
+        ,  {
+        toAddress: sender.address,
+        jettonAmount: toNano('10000'),
+        amount: toNano('0.02'),
+        queryId: 1,
+        value: toNano('0.07')
+      });
+      expect(resultMint.transactions).toHaveTransaction({
+        from: jettonMinter.address,
+        to: jettonWalletSender.address,
+        success: true
+      })
+      const beforeBalance = await burnJettonWallet.getBalance();
+
+      const senderBalance = await jettonWalletSender.getBalance();
+      console.log(senderBalance)
+
+      let purchaseResult = await jettonWalletSender.sendTransfer(sender.getSender(), {
+         value: toNano('0.15'),
+         toAddress: nftCollection.address,
+         queryId: 0,
+         fwdAmount: toNano('0.1'),
+         jettonAmount: toNano(prices[
+             i < 33 ? i - 1 : 32
+             ]),
+         fwdPayload: beginCell()
+             .endCell(),
+       })
+
+        expect(purchaseResult.transactions).toHaveTransaction({
+            from: jettonWalletCollection.address,
+            to: nftCollection.address,
+            success: true
+        })
+      expect(purchaseResult.transactions).toHaveTransaction({
+        from: nftCollection.address,
+        to: jettonWalletCollection.address,
+        success: true
+      })
+      if (i <= 4){
+        expect(purchaseResult.transactions).toHaveTransaction({
+          from: jettonWalletCollection.address,
+          to: jettonWalletSender.address,
+          success: true
+        })
+      }
 
 
-  });
+      const afterBalance = await burnJettonWallet.getBalance();
+      const senderBalanceAfter = await jettonWalletSender.getBalance();
+      if (i < 34) {
+        if (i > 4)
+        {
+          expect(senderBalance - senderBalanceAfter).toEqual(toNano(prices[i - 1]));
+          expect(afterBalance - beforeBalance).toEqual(toNano(prices[i - 1]));
+
+        }
+        else
+        {
+          console.log(prices[i - 1] *  0.89)
+          expect(senderBalance - senderBalanceAfter ).toEqual(toNano((prices[i - 1] *  0.89).toFixed(9)));
+          expect(afterBalance - beforeBalance).toEqual(toNano((prices[i - 1] *  0.89).toFixed(9)));
+
+        }
+
+      }
+
+    }
+    expect(await jettonWalletCollection.getBalance()).toEqual(toNano('0'));
+
+
+  }, 100000000);
 
   it('should deploy and then mint and transfer private', async () => {
-    const randomBuf = rbuffer(31);
-    const randomBuf2 = rbuffer(31);
-    // const secret = toBigIntLE(randomBuf);
-    const secret = 374173982223592588982890232743312907402024842004440599621797430445070595324n;
-    const newSecret = toBigIntLE(randomBuf2);
+    const tree = new MerkleTree(20, [], {
+      hashFunction: mimcHash2,
+      zeroElement: '21663839004416932945382355908790599225266501822907911457504978515578255421292',
+    });
+    const newOwner = await blockchain.treasury('newOwner');
+    const listSecrets= [0n];
+    const listCommitments = ['0'];
+    for (let i = 1; i < 3; i++) {
+      const randomBuf = rbuffer(31);
+      const secret = toBigIntLE(randomBuf);
+      const id = i;
+      listSecrets.push(secret);
+      // ;;(333 + 66 * level)
 
-    const id = 0;
-    const tree = new MerkleTree(20);
+      const {commitment} = await mintNFT(id, secret, tree);
+      console.log(commitment)
+      listCommitments.push(commitment);
 
-    const {commitment} = await mintNFT(id, secret, tree);
-    const leaf = tree.getIndex(commitment);
-    const merkleProof = tree.proof(leaf);
-    console.log(secret.toString())
-    console.log(newSecret.toString())
+    }
+    const id = 1;
+    const lastRoot = tree.root;
+    const merkleProof = tree.proof(listCommitments[id]);
+    const newSecret = toBigIntLE(rbuffer(31));
+
+    tree.insert(mimcHash2(id.toString(), newSecret.toString()));
+
     let input = {
-      root: tree.root(),
+      root: lastRoot,
       id: id,
-      secret: secret.toString(),
-      newSecret: newSecret.toString(),
-      newCommitment: Sha256(id.toString(), newSecret.toString()),
-      nullifier: Sha256(secret.toString(), id.toString()),// should be changed to reverse
-
+      secret: listSecrets[id].toString(),
+      newCommitment: mimcHash2(id.toString(), newSecret.toString()),
+      nullifier: mimcHash2(listSecrets[id].toString(), id.toString()),
       pathElements: merkleProof.pathElements,
       pathIndices: merkleProof.pathIndices,
+      lastRoot: lastRoot,
+      newRoot: tree.root,
+      pathIndicesTreeUpdate: tree.elements.length - 1,
+      pathElementsTreeUpdate: tree.path(tree.elements.length - 1).pathElements,
     };
 
 
@@ -212,45 +323,45 @@ describe('ZKNFTCollection', () => {
     expect(verify).toEqual(true);
     let B_x = proof.pi_b[0].map((num: string) => BigInt(num))
     let B_y = proof.pi_b[1].map((num: string) => BigInt(num))
-    let known = await nftCollection.getRootKnown(BigInt(tree.root()));
-    expect(known).toEqual(1);
+
 
     const owner = await blockchain.treasury('owner');
 
 
+
     const transferResult = await nftCollection.sendTransfer(owner.getSender(), {
-      value: toNano("1.55"),
-      root: BigInt(publicSignals[2]),
-      nullifier: BigInt(publicSignals[0]),
-      newCommitment: BigInt(publicSignals[1]),
+      value: toNano("0.17"),
+      root: BigInt(lastRoot),
+      nullifier: mimcHash2(listSecrets[id].toString(), id.toString()),
+      newCommitment: mimcHash2(id.toString(), newSecret.toString()),
+      newRoot: BigInt(tree.root),
       a: parseG1Func(proof.pi_a.slice(0,2).map((num: string ) => BigInt(num))),
       b: parseG2Func(B_x[0], B_x[1], B_y),
       c: parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num))),
     });
     expect(transferResult.transactions).toHaveTransaction({
       from: nftCollection.address,
-      to: nftCollection.address,
+      to: jettonMinter.address,
       success: true
     })
-
-    tree.insert(publicSignals[1]);
-    expect(BigInt(tree.root())).toEqual(await nftCollection.getLastRoot());
+    expect(BigInt(tree.root)).toEqual(await nftCollection.getLastRoot());
     const randomBufNew = rbuffer(31);
     const newSecret2 = toBigIntLE(randomBufNew);
-    console.log(newSecret2.toString())
-    const leaf2 = tree.getIndex(publicSignals[1]);
-    const merkleProof2 = tree.proof(leaf2);
 
+    const merkleProof2 = tree.proof(mimcHash2(id.toString(), newSecret.toString()));
+    tree.insert(mimcHash2(id.toString(), newSecret2.toString()));
     input = {
-      root: tree.root(),
+      root: merkleProof2.pathRoot,
       id: id,
       secret: newSecret.toString(),
-      newSecret: newSecret2.toString(),
-      newCommitment: Sha256(id.toString(), newSecret2.toString()),
-      nullifier: Sha256(newSecret.toString(), id.toString()),// should be changed to reverse
-
+      newCommitment: mimcHash2(id.toString(), newSecret2.toString()),
+      nullifier: mimcHash2(newSecret.toString(), id.toString()),
       pathElements: merkleProof2.pathElements,
       pathIndices: merkleProof2.pathIndices,
+      lastRoot: merkleProof2.pathRoot,
+      newRoot: tree.root,
+      pathIndicesTreeUpdate: tree.elements.length - 1,
+      pathElementsTreeUpdate: tree.path(tree.elements.length - 1).pathElements,
     };
 
 
@@ -263,12 +374,11 @@ describe('ZKNFTCollection', () => {
     expect(verify).toEqual(true);
     B_x = proof2.pi_b[0].map((num: string) => BigInt(num))
     B_y = proof2.pi_b[1].map((num: string) => BigInt(num))
-    known = await nftCollection.getRootKnown(BigInt(tree.root()));
-    expect(known).toEqual(1);
 
 
     const transferResult2 = await nftCollection.sendTransfer(owner.getSender(), {
-      value: toNano("1.55"),
+      value: toNano("0.17"),
+      newRoot: BigInt(tree.root),
       root: BigInt(publicSignals2[2]),
       nullifier: BigInt(publicSignals2[0]),
       newCommitment: BigInt(publicSignals2[1]),
@@ -278,154 +388,137 @@ describe('ZKNFTCollection', () => {
     });
     expect(transferResult2.transactions).toHaveTransaction({
       from: nftCollection.address,
-      to: nftCollection.address,
+      to: jettonMinter.address,
       success: true
     })
 
   }, 100000000);
 
   it('should deploy and then mint and reveal', async () => {
-    const tree = new MerkleTree(20);
+    const tree = new MerkleTree(20, [], {
+      hashFunction: mimcHash2,
+      zeroElement: '21663839004416932945382355908790599225266501822907911457504978515578255421292',
+    });
     const newOwner = await blockchain.treasury('newOwner');
     const newOwnerSlice = beginCell().storeAddress(newOwner.address).endCell();
-    for (let i = 0; i < 1; i++) {
+    const listSecrets= [0n];
+    const prices = [0]
+    for (let i = 1; i < 3; i++) {
       const randomBuf = rbuffer(31);
-      // const secret = toBigIntLE(randomBuf);
-      const secret = 169761882942218304444494151566684912204411823489975688556022234969441140324n;
+      const secret = toBigIntLE(randomBuf);
       const id = i;
+      listSecrets.push(secret);
+      // ;;(333 + 66 * level)
 
+      prices.push(333 + 66 * i);
       const {commitment} = await mintNFT(id, secret, tree);
-      const leaf = tree.getIndex(commitment);
-      const merkleProof = tree.proof(leaf);
-      console.log(secret.toString())
-      let input = {
-        root: tree.root() ,
-        id: id,
-        secret: secret.toString(),
-        address: newOwnerSlice.beginParse().loadUintBig(256),
-        pathElements: merkleProof.pathElements,
-        pathIndices: merkleProof.pathIndices,
-        nullifier: Sha256(secret.toString(), id.toString()),// should be changed to reverse
-      }
-      console.log(input)
+      console.log(commitment)
 
-      // let {proof, publicSignals} = await groth16.fullProve(input, wasmPathReveal, zkeyPathReveal);
-      // console.log(proof, publicSignals)
-      const proof = {
-        pi_a: [
-          '3579626208057591819362958330594840983016361229849387233022423576430664404549487050292392799430060688450850654435399',
-          '149611584791585391014690646441136284429758416780936461374893253824385694947843117824441096749408949847310077012970',
-          '1'
-        ],
-        pi_b: [
-          [
-            '3625330736896957191192049526166861598585849461954119025057207916567292433292557184380363153622486663106217099076931',
-            '4933546822593852500965187641120373916103303063543864447450571121028599574978081493511972730243979319039111901709'
-          ],
-          [
-            '1459954989520190989176429201691352333821370222578532030707115196716855432297717857050071074013545434463879921742151',
-            '3190830362788915067312319389800858880593818039593494827771642732844588294325261769049930583577348581478287455735924'
-          ],
-          [ '1', '0' ]
-        ],
-        pi_c: [
-          '3745369641383691625618507254528959730733113454816449239011022921608912249043002961800417938446832580041624791005533',
-          '915561429309340496527463299234067009164301999971666070316285949206793733272116389796335050671334760526604216014225',
-          '1'
-        ],
-        protocol: 'groth16',
-        curve: 'bls12381'
-      }
-      const publicSignals = [
-        '21065412687758656656667909203140116316855076641539695339436577966373612838460',
-          '0',
-          '5474410705641251093926627450646259109009340401886935415668738371221639773862',
-          '1874863312974046374036444654468754476774534849088164672660613699685978640718'
-        ]
+    }
+    const id = 2;
+    const { pathElements, pathIndices } = tree.path(id - 1)
+
+    let input = {
+      root: tree.root,
+      id: id,
+      secret: listSecrets[id].toString(),
+      address: newOwnerSlice.beginParse().loadUintBig(256),
+      pathElements: pathElements,
+      pathIndices: pathIndices,
+      nullifier: mimcHash2(listSecrets[id].toString(), id.toString()),
+    }
+    console.log(input)
+
+    let {proof, publicSignals} = await groth16.fullProve(input, wasmPathReveal, zkeyPathReveal);
       let verify = await groth16.verify(vkeyReveal, publicSignals, proof);
       console.log(verify)
       expect(verify).toEqual(true);
       let B_x = proof.pi_b[0].map((num: string) => BigInt(num))
       let B_y = proof.pi_b[1].map((num: string) => BigInt(num))
-      let known = await nftCollection.getRootKnown(BigInt(tree.root()));
+      let known = await nftCollection.getRootKnown(BigInt(tree.root));
       expect(known).toEqual(1);
 
-      const relayer = await blockchain.treasury('relayer');
-
-
-      const revealResult = await nftCollection.sendReveal(relayer.getSender(), {
+      const revealResult = await nftCollection.sendReveal(newOwner.getSender(), {
         value: toNano("0.15"),
-        nullifier: BigInt(publicSignals[0]) ,
+        nullifier: mimcHash2(listSecrets[id].toString(), id.toString()),
         id: id,
         newOwner: newOwner.address,
-        root: BigInt(publicSignals[3]),
+        root: BigInt(tree.root),
         a: parseG1Func(proof.pi_a.slice(0,2).map((num: string ) => BigInt(num))),
         b: parseG2Func(B_x[0], B_x[1], B_y),
         c: parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num))),
       });
       expect(revealResult.transactions).toHaveTransaction({
-        from: relayer.address,
+        from: newOwner.address,
         to: nftCollection.address,
         success: true
       })
       const nftAddress = await nftCollection.getAddress(BigInt(id));
-
       expect(revealResult.transactions).toHaveTransaction({
         from: nftCollection.address,
         to: nftAddress,
         success: true
       })
-      const nftItemContract = blockchain.openContract(
-        NFTItem.createFromAddress(nftAddress));
-      let ownerNFT = await nftItemContract.getOwner();
-      console.log(nftCollection.address.toString())
-      console.log(ownerNFT.toString())
-      console.log(newOwner.address.toString())
-      console.log(relayer.address.toString())
-      expect(ownerNFT).toEqualAddress(newOwner.address);
 
-      expect(BigInt(tree.root())).toEqual(await nftCollection.getLastRoot());
+    // for (let i = 0; i < 1; i++) {
+    //
+    //
+    //   const relayer = await blockchain.treasury('relayer');
+    //
+    //
 
-
-      // then should hide
-      const randomBufNew = rbuffer(31);
-      const newSecret2 = toBigIntLE(randomBufNew);
-
-      const hideResult = await nftItemContract.sendToHide(newOwner.getSender(), {
-        toAddress: nftCollection.address,
-        value: toNano("1.55"),
-        commitment: BigInt(Sha256(id.toString(), newSecret2.toString())),
-        id: id,
-      })
-      expect(hideResult.transactions).toHaveTransaction({
-        from: nftItemContract.address,
-        to: nftCollection.address,
-        success: true
-      })
-       expect(hideResult.transactions).toHaveTransaction({
-        from: nftCollection.address,
-        to: nftCollection.address,
-        success: true
-      })
-      tree.insert(Sha256(id.toString(), newSecret2.toString()));
-      expect(BigInt(tree.root())).toEqual(await nftCollection.getLastRoot());
-
-
-
-      ownerNFT = await nftItemContract.getOwner();
-      expect(ownerNFT).toEqualAddress(nftCollection.address);
-
-      const jetttonWalletOwner = blockchain.openContract(
-        JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(newOwner.address)))
-      const jetttonWalletRelayer = blockchain.openContract(
-        JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(relayer.address)))
-      console.log(await jetttonWalletOwner.getBalance())
-      console.log(await jetttonWalletRelayer.getBalance())
-
-
-
-
-    }
+    //
+    //   const nftItemContract = blockchain.openContract(
+    //     NFTItem.createFromAddress(nftAddress));
+    //   let ownerNFT = await nftItemContract.getOwner();
+    //   console.log(nftCollection.address.toString())
+    //   console.log(ownerNFT.toString())
+    //   console.log(newOwner.address.toString())
+    //   console.log(relayer.address.toString())
+    //   expect(ownerNFT).toEqualAddress(newOwner.address);
+    //
+    //   expect(BigInt(tree.root())).toEqual(await nftCollection.getLastRoot());
+    //
+    //
+    //   // then should hide
+    //   const randomBufNew = rbuffer(31);
+    //   const newSecret2 = toBigIntLE(randomBufNew);
+    //
+    //   const hideResult = await nftItemContract.sendToHide(newOwner.getSender(), {
+    //     toAddress: nftCollection.address,
+    //     value: toNano("1.55"),
+    //     commitment: BigInt(Sha256(id.toString(), newSecret2.toString())),
+    //     id: id,
+    //   })
+    //   expect(hideResult.transactions).toHaveTransaction({
+    //     from: nftItemContract.address,
+    //     to: nftCollection.address,
+    //     success: true
+    //   })
+    //    expect(hideResult.transactions).toHaveTransaction({
+    //     from: nftCollection.address,
+    //     to: nftCollection.address,
+    //     success: true
+    //   })
+    //   tree.insert(Sha256(id.toString(), newSecret2.toString()));
+    //   expect(BigInt(tree.root())).toEqual(await nftCollection.getLastRoot());
+    //
+    //
+    //
+    //   ownerNFT = await nftItemContract.getOwner();
+    //   expect(ownerNFT).toEqualAddress(nftCollection.address);
+    //
+    //   const jetttonWalletOwner = blockchain.openContract(
+    //     JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(newOwner.address)))
+    //   const jetttonWalletRelayer = blockchain.openContract(
+    //     JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(relayer.address)))
+    //   console.log(await jetttonWalletOwner.getBalance())
+    //   console.log(await jetttonWalletRelayer.getBalance())
+    //
+    //
+    //
+    //
+    // }
 
   },100000000);
 });

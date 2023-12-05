@@ -1,16 +1,9 @@
 import crypto from "crypto";
 // @ts-ignore
 import { groth16 } from "snarkjs";
-// @ts-ignore
-import circomlib from "circomlib";
 
 /** Generate random buffer of specified byte length */
 const rbuffer = (nbytes: number) => crypto.randomBytes(nbytes);
-
-/** Compute pedersen hash */
-function pedersenHash(data: Buffer): BigInt {
-  return circomlib.babyJub.unpackPoint(circomlib.pedersenHash.hash(data))[0];
-}
 
 async function genProofArgs(proof: any, pub: any) {
   proof = unstringifyBigInts(proof);
@@ -49,4 +42,4 @@ function toBigIntLE(buf: Buffer) {
   return BigInt(`0x${hex}`);
 }
 
-export { genProofArgs, unstringifyBigInts, toBigIntLE, rbuffer, pedersenHash, groth16 };
+export { genProofArgs, unstringifyBigInts, toBigIntLE, rbuffer, groth16 };

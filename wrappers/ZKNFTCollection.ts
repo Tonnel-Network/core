@@ -4,17 +4,19 @@ import {
   Cell,
   Contract,
   contractAddress,
-  ContractProvider,
+  ContractProvider, Dictionary, DictionaryValue,
   Sender,
   SendMode,
   toNano
 } from 'ton-core';
+import {getCashBack, getReferral} from "./IDO";
 
 export type ZKNFTCollectionConfig = {
   adminAddress: Address;
   nftItemCode: Cell;
   masterJetton: Address;
   jettonWalletCell: Cell;
+  discounts: Address[];
 };
 const OFFCHAIN_CONTENT_PREFIX = 0x01;
 const Opcodes = {
@@ -41,20 +43,34 @@ function create_content() {
   })
   return beginCell().storeRef(content_cell.endCell()).storeRef(content_base.endCell())
 }
+const CellRef: DictionaryValue<Cell> = {
+  serialize: (src, builder) => {
+    builder.storeSlice(src.beginParse())
+  },
+  parse: (src) => src.asCell(),
+}
 
 export function ZKNFTCollectionConfigToCell(config: ZKNFTCollectionConfig) {
-
+  const discounts = Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef)
+  for (let i = 0; i < config.discounts.length; i++) {
+    discounts.set(
+        BigInt("0x" + beginCell().storeAddress(config.discounts[i]).endCell().hash().toString('hex')),
+        beginCell().storeUint(1, 2).endCell()
+    )
+  }
+  const roots = Dictionary.empty(Dictionary.Keys.BigUint(8), CellRef)
+  roots.set(BigInt(0), beginCell().storeUint(43859932230369129483580312926473830336086498799745261185663267638134570341235n, 256).endCell())
   return beginCell()
     .storeAddress(config.adminAddress)
-    .storeUint(0, 64)// next_item_index
+    .storeUint(1, 64)// next_item_index
     .storeRef(create_content().endCell())
     .storeRef(config.nftItemCode)
     .storeRef(beginCell().storeUint(5, 16).storeUint(100, 16).storeAddress(config.adminAddress).endCell())
     .storeRef(beginCell()
-      .storeUint(0, 8)
       .storeRef(beginCell().storeAddress(config.masterJetton).storeRef(config.jettonWalletCell).endCell())
-      .storeRef(beginCell().endCell())
+      .storeRef(beginCell().storeUint(0,8).storeUint(0,32).storeDict(roots).endCell())
       .storeDict(null)
+        .storeRef(beginCell().storeUint(0,8).storeCoins(toNano('2')).storeDict(discounts).endCell())
       .endCell())
     .endCell();
 }
@@ -67,7 +83,13 @@ export class ZKNFTCollection implements Contract {
     return new ZKNFTCollection(address);
   }
 
-  static createFromConfig(config: ZKNFTCollectionConfig, code: Cell, workchain = 0) {
+  static createFromConfig(config: {
+    nftItemCode: Cell;
+    discounts: Address[];
+    jettonWalletCell: Cell;
+    adminAddress: Address;
+    masterJetton: Address
+  }, code: Cell, workchain = 0) {
     const data = ZKNFTCollectionConfigToCell(config);
     const init = {code, data};
     return new ZKNFTCollection(contractAddress(workchain, init), init);
@@ -81,6 +103,21 @@ export class ZKNFTCollection implements Contract {
     });
   }
 
+
+  async sendMintOwner(provider: ContractProvider, via: Sender, opts: {
+    value: bigint;
+    fwd_amount: bigint;
+    payload: Cell;
+  }){
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell().storeUint(4, 32).storeUint(0, 64)
+          .storeCoins(opts.fwd_amount)
+          .storeRef(opts.payload)
+          .endCell(),
+    });
+  }
 
   async sendContinue(
     provider: ContractProvider,
@@ -113,6 +150,7 @@ export class ZKNFTCollection implements Contract {
       root: bigint;
       nullifier: bigint;
       newCommitment: bigint;
+      newRoot: bigint;
     }
   ) {
     const inputCell = beginCell()
@@ -123,6 +161,11 @@ export class ZKNFTCollection implements Contract {
           .storeUint(opts.root, 256)
           .storeUint(opts.nullifier, 256)
           .storeUint(opts.newCommitment, 256)
+            .storeRef(
+                beginCell()
+                    .storeUint(opts.newRoot, 256)
+                    .endCell()
+            )
           .storeRef(
             beginCell().storeRef(opts.a).storeRef(opts.b)
               .storeRef(opts.c).endCell()
