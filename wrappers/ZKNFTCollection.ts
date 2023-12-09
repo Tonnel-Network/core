@@ -43,7 +43,7 @@ function create_content() {
   })
   return beginCell().storeRef(content_cell.endCell()).storeRef(content_base.endCell())
 }
-const CellRef: DictionaryValue<Cell> = {
+export const CellRef: DictionaryValue<Cell> = {
   serialize: (src, builder) => {
     builder.storeSlice(src.beginParse())
   },

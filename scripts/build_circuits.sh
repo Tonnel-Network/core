@@ -12,7 +12,7 @@
 # verification_key.json
 
 # constants
-TARGET_CIRCUIT=../../circuits/zknft/transfer.circom
+TARGET_CIRCUIT=../../circuits/withdraw.circom
 PTAU_FILE=pot14_final.ptau
 ENTROPY_FOR_ZKEY=mnbvc
 

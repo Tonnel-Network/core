@@ -1,14 +1,15 @@
 import {
-  Address,
-  beginCell,
-  Cell,
-  Contract,
-  contractAddress,
-  ContractProvider,
-  Sender,
-  SendMode, TupleItemCell
+    Address,
+    beginCell,
+    Cell,
+    Contract,
+    contractAddress,
+    ContractProvider, Dictionary,
+    Sender,
+    SendMode, TupleItemCell
 } from 'ton-core';
 import {TupleItemSlice} from "ton-core/dist/tuple/tuple";
+import {CellRef} from "./ZKNFTCollection";
 
 export type TonnelConfig = {
   ownerAddress: Address;
@@ -18,9 +19,11 @@ export type TonnelConfig = {
 };
 
 export function tonnelConfigToCell(config: TonnelConfig): Cell {
+    const roots = Dictionary.empty(Dictionary.Keys.BigUint(8), CellRef)
+    roots.set(BigInt(0), beginCell().storeUint(43859932230369129483580312926473830336086498799745261185663267638134570341235n, 256).endCell())
 
-  return beginCell().storeUint(0, 8)
-    .storeRef(beginCell().endCell())
+    return beginCell().storeUint(0, 8)
+      .storeRef(beginCell().storeUint(0,8).storeUint(0,32).storeDict(roots).endCell())
     .storeRef(beginCell().storeAddress(config.ownerAddress).storeUint(15, 10).endCell())
     .storeDict(null)
     .storeRef(
@@ -85,6 +88,9 @@ export class Tonnel implements Contract {
       value: bigint;
       queryID?: number;
       commitment: bigint;
+      newRoot: bigint;
+      oldRoot: bigint;
+      payload: Cell;
     }
   ) {
     await provider.internal(via, {
@@ -93,7 +99,11 @@ export class Tonnel implements Contract {
       body: beginCell()
         .storeUint(Opcodes.deposit, 32)
         .storeUint(opts.queryID ?? 0, 64)
-        .storeRef(beginCell().storeUint(opts.commitment, 256).endCell())
+        .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(
+            opts.newRoot, 256
+        ).storeUint(
+            opts.oldRoot, 256
+        ).storeRef(opts.payload).endCell())
         .endCell(),
     });
   }

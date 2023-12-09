@@ -227,15 +227,8 @@ slice calculate_nft_item_address(int wc, cell state_init) {
     vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, new_root));
     vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, commitment));
     vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, pathIndices));
-~dump(old_root);
-~dump(new_root);
-~dump(commitment);
-~dump(pathIndices);
-    ~dump(1000);
-
 
     slice neg_a = bls_g1_negate(A);
-    ~dump(1030);
 
     int success = bls_pairing_check(neg_a,
         B,
@@ -536,9 +529,8 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         (int old_root, int last_index) = get_last_root_handler(zk_info);
 
         throw_unless(error::verify_failed_input, commitment_value < FIELD_SIZE);
-        throw_unless(error::verify_failed_input, old_root < FIELD_SIZE);
         throw_unless(error::verify_failed_input, new_root < FIELD_SIZE);
-;;        throw_unless(error::verify_failed_root, is_known_root(root));
+
         check_proof_for_insert(old_root, new_root, commitment_value, last_index, insert_proof_slice);
         (int index, merkle) = insert(new_root, merkle);
 
