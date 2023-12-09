@@ -202,7 +202,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
     }
 }
 
-() check_proof_for_insert(int old_root, int new_root, int commitment, int pathIndices, slice insert_proof) impure inline {
+(int) check_proof_for_insert(int old_root, int new_root, int commitment, int pathIndices, slice insert_proof) impure inline {
 
 
     slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
@@ -227,7 +227,6 @@ slice calculate_nft_item_address(int wc, cell state_init) {
     vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, new_root));
     vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, commitment));
     vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, pathIndices));
-
     slice neg_a = bls_g1_negate(A);
 
     int success = bls_pairing_check(neg_a,
@@ -240,8 +239,9 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         delta2,
         4);
     ifnot (success) {
-        throw(error::verify_failed);
+        return 0;
     }
+    return 1;
 
 }
 
@@ -315,9 +315,18 @@ slice calculate_nft_item_address(int wc, cell state_init) {
 
 }
 
-(cell) pack_zk_info(int relayer_reward, cell jetton_info, cell merkle, cell nullifiers, cell discounts, int mint_state) impure inline {
-    return begin_cell().store_ref(jetton_info).store_ref(merkle).store_dict(nullifiers).store_ref(
-        begin_cell().store_uint(mint_state, 8).store_coins(relayer_reward).store_dict(discounts).end_cell()
+(cell) pack_zk_info(int relayer_reward, cell jetton_info, cell merkle, cell nullifiers, cell discounts, int mint_state, cell stucks) impure inline {
+    return begin_cell()
+    .store_ref(jetton_info)
+    .store_ref(merkle)
+    .store_dict(nullifiers)
+    .store_ref(
+        begin_cell()
+        .store_uint(mint_state, 8)
+        .store_coins(relayer_reward)
+        .store_dict(discounts)
+        .store_dict(stucks)
+        .end_cell()
     ).end_cell();
 }
 
@@ -355,6 +364,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
     int mint_state = sale_info_slice~load_uint(8);
     int relayer_reward = sale_info_slice~load_coins();
     cell discounts = sale_info_slice~load_dict();
+    cell stucks = sale_info_slice~load_dict();
 
 
 
@@ -390,7 +400,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         next_item_index += 1;
 
         save_data(owner_address, next_item_index, content, nft_item_code, royalty_params
-            , pack_zk_info(relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state));
+            , pack_zk_info(relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state, stucks));
 
         return ();
     }
@@ -428,7 +438,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         nullifiers~udict_set(256, nullifier, begin_cell().end_cell().begin_parse());
         mint_tonnel(sender_address, relayer_reward, jetton_master_address);
         save_data(owner_address, next_item_index, content, nft_item_code, royalty_params,
-            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state));
+            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state, stucks));
 
         return ();
     }
@@ -470,7 +480,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
             content,
             nft_item_code,
             royalty_params,
-            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state)
+            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state, stucks)
         );
 
         return ();
@@ -487,11 +497,27 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         cell state_init = calculate_nft_item_state_init(id, nft_item_code);
         slice nft_address = calculate_nft_item_address(workchain(), state_init);
         throw_unless(error::access_denied, equal_slices(sender_address, nft_address));
+        int new_root = commitment_msg_slice~load_uint(256);
+        int given_old_root = commitment_msg_slice~load_uint(256);
+        cell insert_proof = commitment_msg_slice~load_ref();
+        slice insert_proof_slice = insert_proof.begin_parse();
+        (int old_root, int last_index) = get_last_root_handler(zk_info);
+
+        throw_unless(error::verify_failed_input, commitment_value < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, new_root < FIELD_SIZE);
+        int check = 0;
+        if (given_old_root == old_root){
+            check = check_proof_for_insert(old_root, new_root, commitment_value, last_index, insert_proof_slice);
+        }
 
 
-        (int index, merkle) = insert(commitment_value, merkle);
+        if (check == 0) {
+            stucks~udict_set(32, last_index, begin_cell().store_uint(commitment_value, 256).store_uint(id, 32).end_cell().begin_parse());
+        } else {
+            (int index, merkle) = insert(new_root, merkle);
+            emit_log_simple(op::hide, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).store_uint(id, 32).end_cell().begin_parse());
+        }
 
-        emit_log_simple(op::hide, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).store_uint(id, 32).end_cell().begin_parse());
 
         save_data(
             owner_address,
@@ -499,10 +525,54 @@ slice calculate_nft_item_address(int wc, cell state_init) {
             content,
             nft_item_code,
             royalty_params,
-            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state)
+            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state, stucks)
         );
 
         return ();
+
+    }
+
+
+    if (op == op::remove_stuck_min) {
+        (stucks, _, slice val, int flag) = stucks.udict_delete_get_min(32);
+        throw_unless(error::empty_stuck, flag);
+
+        int commitment_value_stuck = val~load_uint(256);
+        int token_id = val~load_uint(32);
+
+        cell commitment = in_msg_body~load_ref();
+        slice commitment_slice = commitment.begin_parse();
+        int commitment_value = commitment_slice~load_uint(256);
+        int new_root = commitment_slice~load_uint(256);
+        int given_old_root = commitment_slice~load_uint(256);
+        cell insert_proof = commitment_slice~load_ref();
+        slice insert_proof_slice = insert_proof.begin_parse();
+
+        (int old_root, int last_index) = get_last_root_handler(zk_info);
+
+        throw_unless(error::verify_failed_input, commitment_value_stuck == commitment_value);
+        throw_unless(error::verify_failed_input, commitment_value < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, new_root < FIELD_SIZE);
+        int check = 0;
+        if (given_old_root == old_root){
+            check = check_proof_for_insert(old_root, new_root, commitment_value, last_index, insert_proof_slice);
+        }
+
+        throw_unless(error::verify_failed_input, check == 1);
+        (int index, merkle) = insert(new_root,  merkle);
+
+        emit_log_simple(op::hide, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).store_uint(token_id, 32).end_cell().begin_parse());
+
+        save_data(
+            owner_address,
+            next_item_index,
+            content,
+            nft_item_code,
+            royalty_params,
+            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state, stucks)
+        );
+        return ();
+
 
     }
 
@@ -531,7 +601,9 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         throw_unless(error::verify_failed_input, commitment_value < FIELD_SIZE);
         throw_unless(error::verify_failed_input, new_root < FIELD_SIZE);
 
-        check_proof_for_insert(old_root, new_root, commitment_value, last_index, insert_proof_slice);
+        int check = check_proof_for_insert(old_root, new_root, commitment_value, last_index, insert_proof_slice);
+        throw_unless(error::verify_failed_input, check == 1);
+
         (int index, merkle) = insert(new_root, merkle);
 
         deploy_nft_item(id, nft_item_code, amount_to_fwd);
@@ -543,9 +615,8 @@ slice calculate_nft_item_address(int wc, cell state_init) {
             content,
             nft_item_code,
             royalty_params,
-            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state)
+            pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state, stucks)
         );
-;;        send_continue();
         return ();
     }
     if (op == 5){
@@ -565,7 +636,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
             content,
             nft_item_code,
             royalty_params,
-            pack_zk_info( amount, jetton_info, merkle, nullifiers, discounts, mint_state)
+            pack_zk_info( amount, jetton_info, merkle, nullifiers, discounts, mint_state, stucks)
         );
         return ();
     }

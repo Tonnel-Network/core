@@ -123,7 +123,7 @@ describe('ZKNFTCollection', () => {
       pathIndices: tree.elements.length - 1,
       pathElements: pathElements,
     }
-    // console.log(input)
+    console.log(input)
     const time = Date.now()
     let {proof, publicSignals} = await groth16.fullProve(input,
         wasmPathInsert, zkeyPathInsert);
@@ -460,65 +460,102 @@ describe('ZKNFTCollection', () => {
         success: true
       })
 
-    // for (let i = 0; i < 1; i++) {
-    //
-    //
-    //   const relayer = await blockchain.treasury('relayer');
-    //
-    //
+      const nftItemContract = blockchain.openContract(
+        NFTItem.createFromAddress(nftAddress));
+      let ownerNFT = await nftItemContract.getOwner();
+      expect(ownerNFT).toEqualAddress(newOwner.address);
 
-    //
-    //   const nftItemContract = blockchain.openContract(
-    //     NFTItem.createFromAddress(nftAddress));
-    //   let ownerNFT = await nftItemContract.getOwner();
-    //   console.log(nftCollection.address.toString())
-    //   console.log(ownerNFT.toString())
-    //   console.log(newOwner.address.toString())
-    //   console.log(relayer.address.toString())
-    //   expect(ownerNFT).toEqualAddress(newOwner.address);
-    //
-    //   expect(BigInt(tree.root())).toEqual(await nftCollection.getLastRoot());
-    //
-    //
-    //   // then should hide
-    //   const randomBufNew = rbuffer(31);
-    //   const newSecret2 = toBigIntLE(randomBufNew);
-    //
-    //   const hideResult = await nftItemContract.sendToHide(newOwner.getSender(), {
-    //     toAddress: nftCollection.address,
-    //     value: toNano("1.55"),
-    //     commitment: BigInt(Sha256(id.toString(), newSecret2.toString())),
-    //     id: id,
-    //   })
-    //   expect(hideResult.transactions).toHaveTransaction({
-    //     from: nftItemContract.address,
-    //     to: nftCollection.address,
-    //     success: true
-    //   })
-    //    expect(hideResult.transactions).toHaveTransaction({
-    //     from: nftCollection.address,
-    //     to: nftCollection.address,
-    //     success: true
-    //   })
-    //   tree.insert(Sha256(id.toString(), newSecret2.toString()));
-    //   expect(BigInt(tree.root())).toEqual(await nftCollection.getLastRoot());
-    //
-    //
-    //
-    //   ownerNFT = await nftItemContract.getOwner();
-    //   expect(ownerNFT).toEqualAddress(nftCollection.address);
-    //
-    //   const jetttonWalletOwner = blockchain.openContract(
-    //     JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(newOwner.address)))
-    //   const jetttonWalletRelayer = blockchain.openContract(
-    //     JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(relayer.address)))
-    //   console.log(await jetttonWalletOwner.getBalance())
-    //   console.log(await jetttonWalletRelayer.getBalance())
-    //
-    //
-    //
-    //
-    // }
+
+
+      // then should hide
+      const randomBufNew = rbuffer(31);
+      const newSecret2 = toBigIntLE(randomBufNew);
+    const old_root = tree.root;
+
+    tree.insert(mimcHash2(id.toString(), newSecret2.toString()));
+
+    const root = tree.root;
+    const path = tree.path(tree.elements.length - 1)
+
+
+    let input2 = {
+      oldRoot: old_root,
+      newRoot: root,
+      leaf: mimcHash2(id.toString(), newSecret2.toString()),
+      pathIndices: tree.elements.length - 1,
+      pathElements: path.pathElements,
+    }
+    let {proof: proofInsert, publicSignals: publicSignalsInsert} = await groth16.fullProve(input2,
+        wasmPathInsert, zkeyPathInsert);
+    // console.log(proof, publicSignals)
+    // console.log(Date.now() - time)
+    let verify2 = await groth16.verify(vkeyInsert, publicSignalsInsert, proofInsert);
+    expect(verify2).toEqual(true);
+    const proofInsertCopy = {...proofInsert};
+    let B_x2 = proofInsert.pi_b[0].map((num: string) => BigInt(num))
+    let B_y2 = proofInsert.pi_b[1].map((num: string) => BigInt(num))
+
+      const hideResult = await nftItemContract.sendToHide(newOwner.getSender(), {
+        toAddress: nftCollection.address,
+        value: toNano("0.2"),
+        commitment: BigInt(Sha256(id.toString(), newSecret2.toString())),
+        id: id,
+        payload: beginCell().storeUint(BigInt(root), 256).storeUint(BigInt(old_root), 256)
+            .storeRef(
+                beginCell()
+                    .storeRef(parseG1Func(proofInsert.pi_c.slice(0,2).map((num: string ) => BigInt(num))))
+                    .storeRef(parseG2Func(B_x2[0], B_x2[1], B_y2))
+                    .storeRef(parseG1Func(proofInsert.pi_c.slice(0,2).map((num: string ) => BigInt(num)))
+                    )
+                    .endCell())
+      })
+      expect(hideResult.transactions).toHaveTransaction({
+        from: nftItemContract.address,
+        to: nftCollection.address,
+        success: true
+      })
+      //  expect(hideResult.transactions).toHaveTransaction({
+      //   from: nftCollection.address,
+      //   to: nftCollection.address,
+      //   success: true
+      // })
+
+
+
+      ownerNFT = await nftItemContract.getOwner();
+      expect(ownerNFT).toEqualAddress(nftCollection.address);
+
+      const jetttonWalletOwner = blockchain.openContract(
+        JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(newOwner.address)))
+      const jetttonWalletRelayer = blockchain.openContract(
+        JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(newOwner.address)))
+      console.log(await jetttonWalletOwner.getBalance())
+      console.log(await jetttonWalletRelayer.getBalance())
+    console.log(await nftCollection.getMinStuck())
+    console.log(await nftCollection.getLastRoot())
+    let B_x3 = proofInsert.pi_b[0].map((num: string) => BigInt(num))
+    let B_y3 = proofInsert.pi_b[1].map((num: string) => BigInt(num))
+
+    const stuckFixResult = await nftCollection.sendRemoveMinStuck(newOwner.getSender(), {
+      value: toNano((0.2).toFixed(9)),
+      commitment: BigInt(Sha256(id.toString(), newSecret2.toString())),
+      newRoot: BigInt(root),
+      oldRoot: BigInt(old_root),
+      payload: beginCell()
+          .storeRef(parseG1Func(proofInsertCopy.pi_a.slice(0,2).map((num: string ) => BigInt(num))))
+          .storeRef(parseG2Func(B_x3[0], B_x3[1], B_y3))
+          .storeRef(parseG1Func(proofInsertCopy.pi_c.slice(0,2).map((num: string ) => BigInt(num)))
+          )
+          .endCell()
+    });
+
+    expect(stuckFixResult.transactions).toHaveTransaction({
+      from: newOwner.address,
+      to: nftCollection.address,
+      success: true,
+    });
+    console.log(await nftCollection.getMinStuck())
+    expect(BigInt(tree.root)).toEqual(await nftCollection.getLastRoot());
 
   },100000000);
 });

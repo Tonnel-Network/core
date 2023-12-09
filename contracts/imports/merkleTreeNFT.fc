@@ -11,6 +11,8 @@ const op::change_fee_coef = 0x44f37bdf;
 const op::private_transfer = 0x777;
 const op::reveal = 0x888;
 const op::hide = 0x999;
+const op::remove_stuck_min = 0x111;
+
 ;; errors
 const error::unknown_op = 101;
 const error::access_denied = 102;
@@ -22,6 +24,8 @@ const error::verify_failed_double_spend = 107;
 const error::verify_failed_input = 108;
 const error::invalid_id = 109;
 const error::finished = 110;
+const error::empty_stuck = 111;
+
 ;; other
 const const::tx_fee_send_nft = 40000000; ;; 0.04 TON
 
@@ -91,10 +95,9 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     return 0;
 }
 
-(int, int) get_last_root_handler(zk_info) impure {
+(int, int) get_last_root_handler(cell zk_info) impure {
     slice zk_info_slice = zk_info.begin_parse();
     zk_info_slice~load_ref();
-
     cell merkle_cell = zk_info_slice~load_ref();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
@@ -115,4 +118,23 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
 (int) get_root_known(int root) method_id {
     return is_known_root(root);
+}
+
+(int) get_min_stuck() method_id {
+    (_, _, _, _, _, cell zk_info) = load_data();
+    slice zk_info_slice = zk_info.begin_parse();
+    zk_info_slice~load_ref();
+    zk_info_slice~load_ref();
+    zk_info_slice~load_dict();
+    cell sale_info = zk_info_slice~load_ref();
+    slice sale_info_slice = sale_info.begin_parse();
+    sale_info_slice~load_uint(8);
+    sale_info_slice~load_coins();
+    sale_info_slice~load_dict();
+    cell stucks = sale_info_slice~load_dict();
+    (int key, slice val, int flag) = stucks.udict_get_min?(32);
+    if(flag == 0){
+        return 0;
+    }
+    return val~load_uint(256);
 }

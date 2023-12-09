@@ -24,6 +24,8 @@ const Opcodes = {
   continue: 0x00,
   transferPrivate: 0x777,
   reveal: 0x888,
+  stuck_remove: 0x111
+
 };
 const serializeUri = (uri: string) => {
   return new TextEncoder().encode(encodeURI(uri));
@@ -70,7 +72,7 @@ export function ZKNFTCollectionConfigToCell(config: ZKNFTCollectionConfig) {
       .storeRef(beginCell().storeAddress(config.masterJetton).storeRef(config.jettonWalletCell).endCell())
       .storeRef(beginCell().storeUint(0,8).storeUint(0,32).storeDict(roots).endCell())
       .storeDict(null)
-        .storeRef(beginCell().storeUint(0,8).storeCoins(toNano('2')).storeDict(discounts).endCell())
+        .storeRef(beginCell().storeUint(0,8).storeCoins(toNano('2')).storeDict(discounts).storeDict(null).endCell())
       .endCell())
     .endCell();
 }
@@ -222,6 +224,33 @@ export class ZKNFTCollection implements Contract {
     });
   }
 
+  async sendRemoveMinStuck(
+      provider: ContractProvider,
+      via: Sender,
+      opts: {
+        value: bigint;
+        queryID?: number;
+        commitment: bigint;
+        newRoot: bigint;
+        oldRoot: bigint;
+        payload: Cell;
+      }
+  ) {
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell()
+          .storeUint(Opcodes.stuck_remove, 32)
+          .storeUint(opts.queryID ?? 0, 64)
+          .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(
+              opts.newRoot, 256
+          ).storeUint(
+              opts.oldRoot, 256
+          ).storeRef(opts.payload).endCell())
+          .endCell(),
+    });
+  }
+
   async getAddress(provider: ContractProvider, index: bigint) {
     const result = await provider.get('get_nft_address_by_index', [
       {type: 'int', value: index},
@@ -230,7 +259,11 @@ export class ZKNFTCollection implements Contract {
     return result.stack.readAddress();
 
   }
-
+  async getMinStuck(provider: ContractProvider) {
+    const result = await provider.get('get_min_stuck', []);
+    console.log(result.stack)
+    return result.stack.readNumber();
+  }
 
   async getLastRoot(provider: ContractProvider) {
     const result = await provider.get('get_last_root', []);

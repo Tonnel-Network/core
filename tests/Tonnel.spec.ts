@@ -201,6 +201,8 @@ describe('Tonnel', () => {
     codeWallet = await compile('JettonWallet');
 
 
+
+
   });
 
   let blockchain: Blockchain;
@@ -230,9 +232,9 @@ describe('Tonnel', () => {
         {
           ownerAddress: owner.address,
           tonnelJettonAddress: tonnelJettonMaster.address,
-          depositorTonnelMint: 100,
-          relayerTonnelMint: 50,
-
+          depositorTonnelMint: 200,
+          relayerTonnelMint: 100,
+          protocolFee: 10,
         },
         code
       )
@@ -251,6 +253,20 @@ describe('Tonnel', () => {
       deploy: true,
       success: true,
     });
+
+    const changeConfig = await tonnel.sendChangeConfig(owner.getSender(), {
+      value: toNano('0.05'),
+      new_fee_per_thousand: 15,
+      new_tonnel_mint_amount_deposit: 100,
+      new_tonnel_mint_amount_relayer: 50,
+    })
+    expect(changeConfig.transactions).toHaveTransaction({
+      from: owner.address,
+      to: tonnel.address,
+      success: true,
+    });
+
+
   });
 
 
@@ -289,7 +305,7 @@ describe('Tonnel', () => {
       pathIndices: tree.elements.length - 1,
       pathElements: pathElements,
     }
-    // console.log(input)
+    console.log(input)
     const time = Date.now()
     let {proof, publicSignals} = await groth16.fullProve(input,
         wasmPathInsert, zkeyPathInsert);
@@ -299,18 +315,19 @@ describe('Tonnel', () => {
     expect(verify).toEqual(true);
     let B_x = proof.pi_b[0].map((num: string) => BigInt(num))
     let B_y = proof.pi_b[1].map((num: string) => BigInt(num))
+    const payload = beginCell()
+        .storeRef(parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num))))
+        .storeRef(parseG2Func(B_x[0], B_x[1], B_y))
+        .storeRef(parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num)))
+        )
+        .endCell()
 
     const depositResult = await tonnel.sendDeposit(sender.getSender(), {
       value: toNano((deposit_fee + pool_size * (1 + fee)).toFixed(9)),
       commitment: BigInt(commitment),
       newRoot: BigInt(root),
         oldRoot: BigInt(old_root),
-      payload: beginCell()
-          .storeRef(parseG1Func(proof.pi_a.slice(0,2).map((num: string ) => BigInt(num))))
-          .storeRef(parseG2Func(B_x[0], B_x[1], B_y))
-          .storeRef(parseG1Func(proof.pi_c.slice(0,2).map((num: string ) => BigInt(num)))
-          )
-          .endCell()
+      payload: payload
     });
 
 
@@ -349,9 +366,38 @@ describe('Tonnel', () => {
     expect(await tonnel.getBalance()).toBeGreaterThan(toNano(pool_size))
 
     const rootAfter = await tonnel.getLastRoot();
-    expect(BigInt(tree.root)).toEqual(rootAfter);
+    console.log(rootAfter)
     console.log('after', Number(await tonnel.getBalance()) / 1000000000);
+    console.log(await tonnel.getMinStuck())
+    let {proof: proof2, publicSignals: publicSignals2} = await groth16.fullProve(input,
+        wasmPathInsert, zkeyPathInsert);
+    // console.log(proof, publicSignals)
+    // console.log(Date.now() - time)
+    let verify2 = await groth16.verify(vkeyInsert, publicSignals2, proof2);
+    expect(verify2).toEqual(true);
+    let B_x2 = proof2.pi_b[0].map((num: string) => BigInt(num))
+    let B_y2 = proof2.pi_b[1].map((num: string) => BigInt(num))
+    const payloadGood = beginCell()
+        .storeRef(parseG1Func(proof2.pi_a.slice(0,2).map((num: string ) => BigInt(num))))
+        .storeRef(parseG2Func(B_x2[0], B_x2[1], B_y2))
+        .storeRef(parseG1Func(proof2.pi_c.slice(0,2).map((num: string ) => BigInt(num)))
+        )
+        .endCell()
 
+    const stuckFixResult = await tonnel.sendRemoveMinStuck(sender.getSender(), {
+      value: toNano((0.2).toFixed(9)),
+      commitment: BigInt(commitment),
+      newRoot: BigInt(root),
+      oldRoot: BigInt(old_root),
+      payload: payloadGood
+    });
+
+    expect(stuckFixResult.transactions).toHaveTransaction({
+      from: sender.address,
+      to: tonnel.address,
+      success: true,
+    });
+    console.log(await tonnel.getMinStuck())
 
   }, 500000);
 
