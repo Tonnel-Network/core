@@ -3,13 +3,12 @@ import {Address, beginCell, Cell, toNano} from 'ton-core';
 import {ERRORS, Tonnel} from '../wrappers/Tonnel';
 import '@ton-community/test-utils';
 import {compile} from '@ton-community/blueprint';
-import {rbuffer, toBigIntLE} from "../utils/circuit";
+import {parseG1Func, parseG2Func, rbuffer, toBigIntLE} from "../utils/circuit";
 import path from "path";
 // @ts-ignore
 import { groth16 } from "snarkjs";
 import {JettonMinter} from "../wrappers/JettonMinter";
 import {JettonWallet} from "../wrappers/JettonWallet";
-import exp = require("constants");
 import MerkleTree from "fixed-merkle-tree";
 import {mimcHash2} from "../utils/merkleTree";
 
@@ -28,68 +27,6 @@ const pool_size = 50;
 const deposit_fee = 0.18;
 const withdraw_fee = 0.15;
 
-export function parseG1Func(G1: bigint[]) {
-  let num = G1[0]
-  let y = BigInt(G1[1])
-  y *= 2n;
-  y /= 4002409555221667393417789825735904156556882819939007885332058136124031650490837864442687629129015664037894272559787n;
-  // padding to 381 bits
-  let flag = y.toString(2)
-  let cell = beginCell()
-  num = BigInt(num)
-  const bin  = num.toString(2)
-  // padding to 384 bits
-  const padding =  "10" + flag + bin.padStart(381, '0')
-  // print each 48 bits
-  for (let i = 0; i < padding.length; i += 48) {
-    const chunk = padding.slice(i, i + 48)
-    const dec = BigInt('0b' + chunk)
-    // code += `.store_uint(${dec.toString(10)}, 48)`
-    cell.storeUint(dec, 48)
-  }
-
-  return cell.endCell()
-
-}
-export function parseG2Func(num0: any, num1: any, ys:any) {
-  let cell = beginCell()
-  // a_flag1 = (y_im * 2) // q if y_im > 0 else (y_re * 2) // q python code
-  let flag0
-  if(ys[1] > 0) {
-    ys[1] *= 2n;
-    ys[1] /= 4002409555221667393417789825735904156556882819939007885332058136124031650490837864442687629129015664037894272559787n;
-    flag0 = ys[1].toString(2)
-  } else {
-    ys[0] *= 2n;
-    ys[0] /= 4002409555221667393417789825735904156556882819939007885332058136124031650490837864442687629129015664037894272559787n;
-    flag0 = ys[0].toString(2)
-  }
-  // console.log(flag0)
-
-  num1 = BigInt(num1)
-  // console.log(num.toString(10))
-  let bin  = num1.toString(2)
-// padding to 384 bits
-  let padding =  "10" + flag0 + bin.padStart(381, '0')
-  for (let i = 0; i < padding.length; i += 96) {
-    const chunk = padding.slice(i, i + 96)
-
-    const dec = BigInt('0b' + chunk)
-    // console.log(dec)
-    cell.storeUint(dec, 96)
-  }
-  bin  = num0.toString(2)
-// padding to 384 bits
-  padding =  "000" + bin.padStart(381, '0')
-  for (let i = 0; i < padding.length; i += 96) {
-    const chunk = padding.slice(i, i + 96)
-    const dec = BigInt('0b' + chunk)
-    // console.log(dec)
-    cell.storeUint(dec, 96)
-  }
-  return cell.endCell()
-
-}
 
 
 

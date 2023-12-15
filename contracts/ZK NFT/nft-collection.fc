@@ -13,6 +13,7 @@ int op::transfer_notification() asm "0x7362d09c PUSHINT";
 const BURN_ADDRESS = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c"a;
 const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
 const ONE_TON = 1000000000;
+
 () mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
 
     var msg = begin_cell()
@@ -39,6 +40,7 @@ const ONE_TON = 1000000000;
     send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
 
 }
+
 () send_jetton(slice recepient, int amount, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
     if (amount == 0) {
         return ();
@@ -395,7 +397,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
 
 
 
-        emit_log_simple(0, begin_cell().store_uint(next_item_index, 32).store_slice(origin_sender).end_cell().begin_parse());
+        emit_log_simple(0, begin_cell().store_uint(0 ,4).store_uint(next_item_index, 32).store_slice(origin_sender).end_cell().begin_parse());
 
         next_item_index += 1;
 
@@ -433,7 +435,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
 
         (int index, merkle) = insert(new_root, merkle);
 
-        emit_log_simple(op::private_transfer, begin_cell().store_uint(newCommitment, 256).store_uint(index, 32).store_uint(nullifier, 256).end_cell().begin_parse());
+        emit_log_simple(op::private_transfer, begin_cell().store_uint(1, 4).store_uint(newCommitment, 256).store_uint(index, 32).store_uint(nullifier, 256).end_cell().begin_parse());
 
         nullifiers~udict_set(256, nullifier, begin_cell().end_cell().begin_parse());
         mint_tonnel(sender_address, relayer_reward, jetton_master_address);
@@ -473,7 +475,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         ;; transfer nft item to given owner
         transfer_nft_item(nft_address, owner);
 
-        emit_log_simple(op::reveal, begin_cell().store_uint(id, 32).store_slice(owner).store_uint(nullifier, 256).end_cell().begin_parse());
+        emit_log_simple(op::reveal, begin_cell().store_uint(2, 4).store_uint(id, 32).store_slice(owner).store_uint(nullifier, 256).end_cell().begin_parse());
 
         save_data(owner_address,
             next_item_index,
@@ -512,10 +514,10 @@ slice calculate_nft_item_address(int wc, cell state_init) {
 
 
         if (check == 0) {
-            stucks~udict_set(32, last_index, begin_cell().store_uint(commitment_value, 256).store_uint(id, 32).end_cell().begin_parse());
+            stucks~udict_set(256, commitment_value, begin_cell().store_uint(commitment_value, 256).store_uint(id, 32).end_cell().begin_parse());
         } else {
             (int index, merkle) = insert(new_root, merkle);
-            emit_log_simple(op::hide, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).store_uint(id, 32).end_cell().begin_parse());
+            emit_log_simple(op::hide, begin_cell().store_uint(3, 4).store_uint(commitment_value, 256).store_uint(index, 32).store_uint(id, 32).end_cell().begin_parse());
         }
 
 
@@ -534,7 +536,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
 
 
     if (op == op::remove_stuck_min) {
-        (stucks, _, slice val, int flag) = stucks.udict_delete_get_min(32);
+        (stucks, _, slice val, int flag) = stucks.udict_delete_get_min(256);
         throw_unless(error::empty_stuck, flag);
 
         int commitment_value_stuck = val~load_uint(256);
@@ -561,7 +563,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
         throw_unless(error::verify_failed_input, check == 1);
         (int index, merkle) = insert(new_root,  merkle);
 
-        emit_log_simple(op::hide, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).store_uint(token_id, 32).end_cell().begin_parse());
+        emit_log_simple(op::hide, begin_cell().store_uint(3, 4).store_uint(commitment_value, 256).store_uint(index, 32).store_uint(token_id, 32).end_cell().begin_parse());
 
         save_data(
             owner_address,
@@ -571,6 +573,8 @@ slice calculate_nft_item_address(int wc, cell state_init) {
             royalty_params,
             pack_zk_info( relayer_reward, jetton_info, merkle, nullifiers, discounts, mint_state, stucks)
         );
+        send_ton(sender_address, 0, SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
+
         return ();
 
 
@@ -608,6 +612,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
 
         deploy_nft_item(id, nft_item_code, amount_to_fwd);
         mint_state += 1;
+        emit_log_simple(op::mint(), begin_cell().store_uint(4, 4).store_uint(commitment_value, 256).store_uint(index, 32).store_uint(id, 32).end_cell().begin_parse());
 
         save_data(
             owner_address,

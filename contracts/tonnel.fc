@@ -125,7 +125,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
     if (op == op::deposit) {
         int fee_amount = POOL_SIZE * fee_percent / 1000; ;; protocol fee
-        throw_unless(error::fund, msg_value > POOL_SIZE + fee_amount + const::tx_fee);
+        throw_unless(error::fund, msg_value >= POOL_SIZE + fee_amount + const::tx_fee);
 
         cell commitment = in_msg_body~load_ref();
         slice commitment_slice = commitment.begin_parse();
@@ -143,14 +143,15 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
             check = check_proof_for_insert(old_root, new_root, commitment_value, last_index, insert_proof_slice);
         }
         if (check == 0) {
-            stucks~udict_set(32, last_index, begin_cell().store_uint(commitment_value, 256).end_cell().begin_parse());
+            stucks~udict_set(256, commitment_value, begin_cell().store_uint(commitment_value, 256).end_cell().begin_parse());
         } else {
             (int index, merkle) = insert(new_root,  merkle);
-            emit_log_simple(op::deposit, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
+            emit_log_simple(op::deposit, begin_cell().store_uint(0 ,8).store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
         }
 
-
-        send_ton(fee_recepient, fee_amount, 1);
+        if (fee_amount > 0) {
+            send_ton(fee_recepient, fee_amount, 1);
+        }
         mint_tonnel(sender_address, tonnel_mint_amount_deposit * ONE_TON, tonnel_jetton_master_address);
 
 
@@ -235,6 +236,9 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         mint_tonnel(sender_address, tonnel_mint_amount_relayer * ONE_TON, tonnel_jetton_master_address);
 
         save_data(merkle, fee_info, nullifiers, stucks);
+
+        emit_log_simple(op::withdraw, begin_cell().store_uint(1 ,8).store_uint(nullifier_hash, 256).store_slice(recipient).store_uint(fee_coef, 32).end_cell().begin_parse());
+
         send_ton(sender_address, 0, SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
         return ();
 
@@ -242,8 +246,9 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     }
 
     if (op == op::remove_stuck_min) {
-        (stucks, _, slice val, int flag) = stucks.udict_delete_get_min(32);
+        (stucks, _, slice val, int flag) = stucks.udict_delete_get_min(256);
         throw_unless(error::empty_stuck, flag);
+
         int commitment_value_stuck = val~load_uint(256);
         cell commitment = in_msg_body~load_ref();
         slice commitment_slice = commitment.begin_parse();
@@ -252,6 +257,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         int given_old_root = commitment_slice~load_uint(256);
         cell insert_proof = commitment_slice~load_ref();
         slice insert_proof_slice = insert_proof.begin_parse();
+
         (int old_root, int last_index) = get_last_root_handler(merkle);
         throw_unless(error::verify_failed_input, commitment_value_stuck == commitment_value);
         throw_unless(error::verify_failed_input, commitment_value < FIELD_SIZE);
@@ -263,7 +269,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
         throw_unless(error::verify_failed_input, check == 1);
         (int index, merkle) = insert(new_root,  merkle);
-        emit_log_simple(op::deposit, begin_cell().store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
+        emit_log_simple(op::deposit, begin_cell().store_uint(0 ,8).store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
 
         save_data(merkle, fee_info, nullifiers, stucks);
         return ();

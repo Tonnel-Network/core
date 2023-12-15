@@ -2,12 +2,15 @@
 
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 const ZERO_VALUE = 21663839004416932945382355908790599225266501822907911457504978515578255421292;
-const POOL_SIZE = 2000 * 1000000000; ;; 2000 Jetton for TESTNET
+const POOL_SIZE = 500 * 1000000000; ;; 500 Jetton for TESTNET
 
 
 const op::deposit = 0x888;
 const op::withdraw = 0x777;
-const op::set_fee = 0x999;
+const op::change_config = 0x999;
+const op::claim_fee = 0x222;
+const op::remove_stuck_min = 0x111;
+
 const op::change_fee_address = 0x1c69253d;
 const op::change_fee_coef = 0x44f37bdf;
 
@@ -22,185 +25,65 @@ const error::verify_failed_root = 106;
 const error::verify_failed_double_spend = 107;
 const error::verify_failed_input = 108;
 const error::jetton_sender = 109;
+const error::empty_stuck = 110;
+
 ;; other
 const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
 
-
-(slice) numbers_to_string(int left, int right) inline {
-    builder b = begin_cell();
-    int lenL = 0;
-    int lenR = 0;
-    int copy = left;
-    int maskR = 1;
-    int maskL = 1;
-
-    while (copy > 0) {
-        copy = copy >> 4;
-        if (lenL) {
-            maskL = maskL << 4;
-        }
-        lenL += 1;
-
-    }
-    copy = right;
-    while (copy > 0) {
-        copy = copy >> 4;
-        if (lenR) {
-            maskR = maskR << 4;
-        }
-        lenR += 1;
-    }
-    repeat (64 - lenL) {
-        b~store_uint(0, 4);
-    }
-    repeat (lenL) {
-        int digit = left / maskL;
-        b~store_uint(digit, 4);
-        left = left % maskL;
-        maskL = maskL >> 4;
-    }
-    repeat (64 - lenR) {
-        b~store_uint(0, 4);
-    }
-    repeat (lenR) {
-        int digit = right / maskR;
-        b~store_uint(digit, 4);
-        right = right % maskR;
-        maskR = maskR >> 4;
-    }
-
-    return b.end_cell().begin_parse();
-}
-
-(int) sha256LeftRight(int left, int right) inline {
-    slice s = numbers_to_string(left, right);
-    int res = string_hash(s) % 52435875175126190479447740508185965837690552500527637822603658699938581184513;
-    return res;
-}
-
-(int) sha256LeftRightSlice(slice left, slice right) inline {
-    slice s = numbers_to_string(left~load_uint(256), right~load_uint(256));
-    int res = string_hash(s) % 52435875175126190479447740508185965837690552500527637822603658699938581184513;
-    return res;
-}
-
-(int, cell) construct_tree(int init, cell merkle_data_cell) impure  {
-    slice merkle_data = merkle_data_cell.begin_parse();
-    int current_zero_value = ZERO_VALUE;
-    cell zeros = new_dict();
-    cell filled_subtrees = new_dict();
-    cell roots = new_dict();
-    slice current_zero = begin_cell().store_uint(current_zero_value, 256).end_cell().begin_parse();
-    int i = init;
-
-    if (merkle_data.slice_bits() > 0){
-        current_zero_value = merkle_data~load_uint(256);
-        zeros = merkle_data~load_dict();
-        filled_subtrees = merkle_data~load_dict();
-        roots = merkle_data~load_dict();
-        current_zero = begin_cell().store_uint(current_zero_value, 256).end_cell().begin_parse();
-    } else {
-        zeros~udict_set(8, 0, current_zero);
-        filled_subtrees~udict_set(8, 0, current_zero);
-        i = i + 1;
-
-    }
-
-
-
-    while ((i < 20) & ( i - init < 10)) {
-        current_zero_value = sha256LeftRightSlice(current_zero, current_zero);
-        current_zero = begin_cell().store_uint(current_zero_value, 256).end_cell().begin_parse();
-
-        zeros~udict_set(8, i, current_zero);
-
-        filled_subtrees~udict_set(8, i, current_zero);
-        i = i + 1;
-
-    }
-
-    if(i == 20){
-
-        roots~udict_set(8, 0, begin_cell().store_uint(sha256LeftRightSlice(current_zero, current_zero), 256).end_cell().begin_parse());
-        return (i, begin_cell().store_uint(0, 8).store_uint(0, 32).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell()); ;;currentRootIndex  = 0, nextIndex =0
-
-    }
-    return (i, begin_cell().store_uint(current_zero_value, 256).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell());
-}
-
-(int,int, cell) insert(int leaf, int init, cell merkle_data_cell) impure {
+(int, cell) insert(int root, cell merkle_data_cell) impure {
     slice merkle_data = merkle_data_cell.begin_parse();
     int currentRootIndex = merkle_data~load_uint(8);
     int nextIndex = merkle_data~load_uint(32);
-    cell zeros = merkle_data~load_dict();
-    cell filled_subtrees = merkle_data~load_dict();
     cell roots = merkle_data~load_dict();
-    int currentIndex = nextIndex;
-    int current_level_hash = leaf;
-    int left = 0;
-    int right = 0;
-    int i = 0;
 
-    if(init == 0) {
-        cell backup_cell = merkle_data~load_ref();
-        slice backup = backup_cell.begin_parse();
-        current_level_hash = backup~load_uint(256);
-        left = backup~load_uint(256);
-        right = backup~load_uint(256);
-        i = backup~load_uint(8);
-        currentIndex = backup~load_uint(32);
-    }
-
-
-
-
-    while (((init == 1) & (i < 10)) | ((init == 0) & (i < 20))) {
-        if (currentIndex % 2 == 0) {
-            left = current_level_hash;
-            (slice right_slice, _) = zeros.udict_get?(8, i);
-            right = right_slice~load_uint(256);
-            filled_subtrees~udict_set(8, i, begin_cell().store_uint(current_level_hash, 256).end_cell().begin_parse());
-        } else {
-            (slice left_slice, _) = filled_subtrees.udict_get?(8, i);
-            left = left_slice~load_uint(256);
-            right = current_level_hash;
-        }
-
-        current_level_hash = sha256LeftRight(left, right);
-        currentIndex = currentIndex / 2;
-
-        i = i + 1;
-    }
-    if( i == 20){
-        currentRootIndex = (currentRootIndex + 1) % 100;
-        roots~udict_set(8, currentRootIndex, begin_cell().store_uint(current_level_hash, 256).end_cell().begin_parse());
-        nextIndex = nextIndex + 1;
-        return (nextIndex - 1, 20, begin_cell().store_uint(currentRootIndex, 8).store_uint(nextIndex, 32).store_dict(zeros).store_dict(filled_subtrees).store_dict(roots).end_cell());
-
-    }
-
-
-    return (nextIndex, 21,
-            begin_cell()
-                    .store_uint(currentRootIndex, 8)
-                    .store_uint(nextIndex, 32)
-                    .store_dict(zeros)
-                    .store_dict(filled_subtrees)
-                    .store_dict(roots)
-                    .store_ref(begin_cell()
-                                       .store_uint(current_level_hash, 256)
-                                       .store_uint(left, 256)
-                                       .store_uint(right, 256)
-                                       .store_uint(i, 8)
-                                       .store_uint(currentIndex, 32)
-                                       .end_cell())
-                    .end_cell());
-
-
+    currentRootIndex = (currentRootIndex + 1) % 100;
+    roots~udict_set(8, currentRootIndex, begin_cell().store_uint(root, 256).end_cell().begin_parse());
+    nextIndex = nextIndex + 1;
+    return (nextIndex - 1, begin_cell().store_uint(currentRootIndex, 8).store_uint(nextIndex, 32).store_dict(roots).end_cell());
 }
 
 
 
+(cell) pack_fee_info(slice fee_recepient, slice tonnel_jetton_master_address, int fee_percent, int tonnel_mint_amount_deposit, int tonnel_mint_amount_relayer, int total_fee_claimable, int deposit_fee) impure inline {
+    return begin_cell()
+    .store_slice(fee_recepient)
+    .store_slice(tonnel_jetton_master_address)
+    .store_uint(fee_percent, 16)
+    .store_uint(tonnel_mint_amount_deposit, 32)
+    .store_uint(tonnel_mint_amount_relayer, 32)
+    .store_coins(total_fee_claimable)
+    .store_coins(deposit_fee)
+    .end_cell();
+}
+
+(slice, slice, int, int, int, int, int) unpack_fee_info(cell fee_info) impure inline {
+    slice fee_info_slice = fee_info.begin_parse();
+    slice fee_recepient = fee_info_slice~load_msg_addr();
+    slice tonnel_jetton_master_address = fee_info_slice~load_msg_addr();
+    int fee_percent = fee_info_slice~load_uint(16);
+    int tonnel_mint_amount_deposit = fee_info_slice~load_uint(32);
+    int tonnel_mint_amount_relayer = fee_info_slice~load_uint(32);
+    int total_fee_claimable = fee_info_slice~load_coins();
+    int deposit_fee = fee_info_slice~load_coins(); ;; default 0.15 TON
+
+    return (fee_recepient, tonnel_jetton_master_address, fee_percent, tonnel_mint_amount_deposit, tonnel_mint_amount_relayer, total_fee_claimable, deposit_fee);
+}
+
+(cell) pack_jetton_info(slice jetton_master_address, cell JETTON_BYTECODE, cell stucks) impure inline {
+    return begin_cell()
+    .store_slice(jetton_master_address)
+    .store_ref(JETTON_BYTECODE)
+    .store_dict(stucks)
+    .end_cell();
+}
+
+(slice, cell, cell) unpack_jetton_info(cell jetton_info) impure inline {
+    slice jetton_info_slice = jetton_info.begin_parse();
+    slice jetton_master_address = jetton_info_slice~load_msg_addr();
+    cell JETTON_BYTECODE = jetton_info_slice~load_ref();
+    cell stucks = jetton_info_slice~load_dict();
+    return (jetton_master_address, JETTON_BYTECODE, stucks);
+}
 
 
 (int) is_known_root(int root) impure {
@@ -208,12 +91,10 @@ const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
         return 0;
     }
 
-    (int init, cell merkle_cell, _, _, _) = load_data();
+    (cell merkle_cell, _, _, _) = load_data();
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
     merkle~load_uint(32);
-    merkle~load_dict();
-    merkle~load_dict();
     cell roots = merkle~load_dict();
 
     int i = currentRootIndex;
@@ -249,19 +130,32 @@ const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
 
 }
 
-(int) get_last_root() method_id {
-    (int init, cell merkle_cell, _, _, _) = load_data();
+(int, int) get_last_root_handler(cell merkle_cell) impure {
     slice merkle = merkle_cell.begin_parse();
     int currentRootIndex = merkle~load_uint(8);
-    merkle~load_uint(32);
-    merkle~load_dict();
-    merkle~load_dict();
+    int last_index = merkle~load_uint(32);
     cell roots = merkle~load_dict();
     (slice root_slice, int found) = roots.udict_get?(8, currentRootIndex);
     if(found == 0){
+        return (0, last_index);
+    }
+    return (root_slice~load_uint(256), last_index);
+}
+
+(int) get_last_root() method_id {
+    (cell merkle_cell, _, _, _) = load_data();
+    (int root, _) = get_last_root_handler(merkle_cell);
+    return root;
+}
+(int) get_min_stuck() method_id {
+    (_, _, _, cell jetton_info) = load_data();
+    (_, _, cell stucks) = unpack_jetton_info(jetton_info);
+
+    (int key, slice val, int flag) = stucks.udict_get_min?(32);
+    if(flag == 0){
         return 0;
     }
-    return root_slice~load_uint(256);
+    return val~load_uint(256);
 }
 
 

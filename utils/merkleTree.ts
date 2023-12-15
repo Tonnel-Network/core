@@ -1,7 +1,6 @@
 import { ethers } from "ethers";
-const circomlib = require("circomlib");
-const mimcsponge = circomlib.mimcsponge;
-
+// @ts-ignore
+import mimcsponge from "../utils/mimcsponge";
 export  function bitsToNumber(bits: any[]) {
   let result = 0
   for (const item of bits.slice().reverse()) {

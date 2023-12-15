@@ -4,14 +4,13 @@ import '@ton-community/test-utils';
 import {compile} from '@ton-community/blueprint';
 import {ZKNFTCollection} from "../wrappers/ZKNFTCollection";
 import {
-  groth16,
+  groth16, parseG1Func, parseG2Func,
   rbuffer,
   toBigIntLE,
   unstringifyBigInts
 } from "../utils/circuit";
 import {bitsToNumber, mimcHash, mimcHash2, Sha256} from "../utils/merkleTree";
 import path from "path";
-import {parseG1Func, parseG2Func} from "./Tonnel.spec";
 import {NFTItem} from "../wrappers/NFTItem";
 import {JettonMinter} from "../wrappers/JettonMinter";
 import {JettonWallet} from "../wrappers/JettonWallet";

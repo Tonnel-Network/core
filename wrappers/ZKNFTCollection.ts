@@ -32,8 +32,8 @@ const serializeUri = (uri: string) => {
 }
 
 function create_content() {
-  const contentBuffer = serializeUri("https://api.tonnel.network/test/zknft/meta");
-  const contentBaseBuffer = serializeUri("https://api.tonnel.network/test/zknft/");
+  const contentBuffer = serializeUri("https://api.tonnel.network/test/illuminati/meta");
+  const contentBaseBuffer = serializeUri("https://api.tonnel.network/test/illuminati/");
   var content_cell = beginCell().storeUint(OFFCHAIN_CONTENT_PREFIX, 8);
   contentBuffer.forEach((byte) => {
     content_cell.storeUint(byte, 8);

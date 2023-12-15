@@ -4,21 +4,21 @@
 
 
 ;; load_data populates storage variables using stored data
-(int, cell, cell, cell, cell) load_data() impure {
+(cell, cell, cell, cell) load_data() impure {
     var ds = get_data().begin_parse();
-    int init = ds~load_uint(8);
     cell merkle = ds~load_ref();
     cell fee_info = ds~load_ref();
     cell nullifiers = ds~load_dict();
     cell jetton_info = ds~load_ref();
+
     ds.end_parse();
-    return (init, merkle, fee_info, nullifiers, jetton_info);
+    return (merkle, fee_info, nullifiers, jetton_info);
 }
 
 ;; save_data stores storage variables as a cell into persistent storage
-() save_data(int init, cell merkle, cell fee_info, cell nullifiers, cell jetton_info) impure {
+() save_data(cell merkle, cell fee_info, cell nullifiers, cell jetton_info) impure {
     set_data(
-            begin_cell().store_uint(init, 8).store_ref(merkle).store_ref(fee_info).store_dict(nullifiers).store_ref(jetton_info)
+            begin_cell().store_ref(merkle).store_ref(fee_info).store_dict(nullifiers).store_ref(jetton_info)
                     .end_cell()
     );
 }
