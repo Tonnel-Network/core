@@ -397,7 +397,7 @@ slice calculate_nft_item_address(int wc, cell state_init) {
 
 
 
-        emit_log_simple(0, begin_cell().store_uint(0 ,4).store_uint(next_item_index, 32).store_slice(origin_sender).end_cell().begin_parse());
+        emit_log_simple(0, begin_cell().store_uint(0 ,4).store_uint(next_item_index, 32).store_slice(origin_sender).store_coins(nft_price).end_cell().begin_parse());
 
         next_item_index += 1;
 

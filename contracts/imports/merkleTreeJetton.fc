@@ -2,7 +2,7 @@
 
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 const ZERO_VALUE = 21663839004416932945382355908790599225266501822907911457504978515578255421292;
-const POOL_SIZE = 500 * 1000000000; ;; 500 Jetton for TESTNET
+const POOL_SIZE = 66 * 1000000000; ;; 1000 Jetton for TESTNET
 
 
 const op::deposit = 0x888;
@@ -151,7 +151,7 @@ const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
     (_, _, _, cell jetton_info) = load_data();
     (_, _, cell stucks) = unpack_jetton_info(jetton_info);
 
-    (int key, slice val, int flag) = stucks.udict_get_min?(32);
+    (int key, slice val, int flag) = stucks.udict_get_min?(256);
     if(flag == 0){
         return 0;
     }

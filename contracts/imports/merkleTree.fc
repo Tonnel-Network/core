@@ -2,7 +2,7 @@
 
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 const ZERO_VALUE = 21663839004416932945382355908790599225266501822907911457504978515578255421292;
-const POOL_SIZE = 50 * 1000000000; ;; 50 TON for TESTNET
+const POOL_SIZE = 5 * 1000000000; ;; 5 TON for Mainnet:)
 
 
 const op::deposit = 0x888;
@@ -104,7 +104,7 @@ const const::tx_fee = 170000000; ;; 0.17 TON
 
 (int) get_min_stuck() method_id {
     (_, _, _, cell stuck) = load_data();
-    (int key, slice val, int flag) = stuck.udict_get_min?(32);
+    (int key, slice val, int flag) = stuck.udict_get_min?(256);
     if(flag == 0){
         return 0;
     }

@@ -6,7 +6,9 @@ const ONE_TON = 1000000000;
 const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
 const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 () mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
-
+    if (amount == 0) {
+        return ();
+    }
     var msg = begin_cell()
             .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
             .store_slice(JETTON_MASTER_ADDRESS)
@@ -152,7 +154,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         if (fee_amount > 0) {
             send_ton(fee_recepient, fee_amount, 1);
         }
-        mint_tonnel(sender_address, tonnel_mint_amount_deposit * ONE_TON, tonnel_jetton_master_address);
+        mint_tonnel(sender_address, tonnel_mint_amount_deposit * ONE_TON / 100, tonnel_jetton_master_address);
 
 
 
@@ -233,7 +235,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         send_ton(recipient, POOL_SIZE - fee_amount, 1);
         send_ton(sender_address, fee_amount, 1);
 
-        mint_tonnel(sender_address, tonnel_mint_amount_relayer * ONE_TON, tonnel_jetton_master_address);
+        mint_tonnel(sender_address, tonnel_mint_amount_relayer * ONE_TON / 100, tonnel_jetton_master_address);
 
         save_data(merkle, fee_info, nullifiers, stucks);
 
@@ -259,15 +261,15 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         slice insert_proof_slice = insert_proof.begin_parse();
 
         (int old_root, int last_index) = get_last_root_handler(merkle);
-        throw_unless(error::verify_failed_input, commitment_value_stuck == commitment_value);
-        throw_unless(error::verify_failed_input, commitment_value < FIELD_SIZE);
-        throw_unless(error::verify_failed_input, new_root < FIELD_SIZE);
+        throw_unless(error::verify_failed_input + 100, commitment_value_stuck == commitment_value);
+        throw_unless(error::verify_failed_input + 101, commitment_value < FIELD_SIZE);
+        throw_unless(error::verify_failed_input + 102, new_root < FIELD_SIZE);
         int check = 0;
         if (given_old_root == old_root){
             check = check_proof_for_insert(old_root, new_root, commitment_value, last_index, insert_proof_slice);
         }
 
-        throw_unless(error::verify_failed_input, check == 1);
+        throw_unless(error::verify_failed_input + 103, check == 1);
         (int index, merkle) = insert(new_root,  merkle);
         emit_log_simple(op::deposit, begin_cell().store_uint(0 ,8).store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
 

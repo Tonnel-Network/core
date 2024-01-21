@@ -132,7 +132,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     sale_info_slice~load_coins();
     sale_info_slice~load_dict();
     cell stucks = sale_info_slice~load_dict();
-    (int key, slice val, int flag) = stucks.udict_get_min?(32);
+    (int key, slice val, int flag) = stucks.udict_get_min?(256);
     if(flag == 0){
         return 0;
     }

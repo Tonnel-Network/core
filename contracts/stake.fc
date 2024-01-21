@@ -1,37 +1,45 @@
 #include "staking/storage.fc";
 #include "jetton/imports/jetton-utils.fc";
 #include "jetton/imports/op-codes.fc";
+const ONE_TON = 1000000000;
 
 () send_jetton(slice recepient, int amount, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
+    if (amount == 0) {
+        return ();
+    }
     slice jetton_wallet = calculate_user_jetton_wallet_address(my_address(), JETTON_MASTER_ADDRESS, JETTON_BYTE_CODE);
 
     var msg = begin_cell()
-            .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
-            .store_slice(jetton_wallet)
-            .store_coins(const::tx_fee_send_jetton)
-            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-            .store_uint(op::transfer(), 32)
-            .store_uint(0, 64)
-            .store_coins(amount)
-            .store_slice(recepient)
-            .store_uint(0, 2)
-            .store_uint(0, 1)
-            .store_coins(0)
-            .store_uint(0, 1);
+    .store_uint(0x10, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(jetton_wallet)
+    .store_coins(const::tx_fee_send_jetton)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1)
+    .store_maybe_ref(
+        begin_cell()
+        .store_uint(op::transfer(), 32)
+        .store_uint(0, 64)
+        .store_coins(amount)
+        .store_slice(recepient)
+        .store_slice(recepient)
+        .store_uint(0, 1)
+        .store_coins(1)
+        .store_uint(0, 1)
+        .end_cell()
+    );
     send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
 
 }
 
-() send_ton(slice recepient, int amount) impure inline {
+() send_ton(slice recepient, int amount, int mode) impure inline {
     var msg = begin_cell()
-            .store_uint(0x10, 6)
-            .store_slice(recepient)
-            .store_grams(amount)
-            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-            .end_cell();
-    send_raw_message(msg, 1);
-
+    .store_uint(0x10, 6)
+    .store_slice(recepient)
+    .store_grams(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell();
+    send_raw_message(msg, mode);
 }
+
 
 () emit_log_simple (int event_id, slice data) impure inline {
     var msg = begin_cell()
@@ -77,92 +85,93 @@
         cell JETTON_BYTECODE = jetton_info_slice~load_ref();
         throw_unless(error::jetton_sender, equal_slices(sender_address, calculate_user_jetton_wallet_address(my_address(), jetton_master_address, JETTON_BYTECODE)));
         slice origin_sender = in_msg_body~load_msg_addr(); ;; transfer origin address (not used)
-        (slice data, int f) = states.udict_get?(256, slice_hash(origin_sender));
+        cell creed_data = in_msg_body~load_ref();
+        slice creed_data_slice = creed_data.begin_parse();
+        int creed_id = creed_data_slice~load_uint(64);
+        slice dict_key = begin_cell().store_slice(origin_sender).store_uint(creed_id, 64).end_cell().begin_parse();
+        (slice data, int f) = states.udict_get?(256, slice_hash(dict_key));
         int jettonAmount = 0;
-        int tonAmount = 0;
         ifnot(f == 0) {
             jettonAmount = data~load_coins();
-            tonAmount = data~load_coins();
         }
-        states~udict_set(256, slice_hash(origin_sender),
-                begin_cell().store_coins(jettonAmount + send_amount).store_coins(tonAmount).end_cell().begin_parse());
+        states~udict_set(256, slice_hash(dict_key),
+                begin_cell().store_coins(jettonAmount + send_amount).end_cell().begin_parse());
 
 
-        emit_log_simple(op::stake_TONNEL(), begin_cell().store_coins(send_amount).end_cell().begin_parse());
-        save_data(states, jetton_info, admin_info);
-        return ();
-    }
-    if(op == op::stake_TON()) {
-        throw_unless(error::fund, msg_value > const::tx_fee);
-        int amount_to_stake = msg_value - const::tx_fee;
-        (slice data, int f) = states.udict_get?(256, slice_hash(sender_address));
-        int jettonAmount = 0;
-        int tonAmount = 0;
-        ifnot(f == 0) {
-            jettonAmount = data~load_coins();
-            tonAmount = data~load_coins();
-        }
-        states~udict_set(256, slice_hash(sender_address),
-                begin_cell().store_coins(jettonAmount).store_coins(tonAmount + amount_to_stake).end_cell().begin_parse());
-
-        emit_log_simple(op::stake_TON(), begin_cell().store_coins(amount_to_stake).end_cell().begin_parse());
-        save_data(states, jetton_info, admin_info);
-        return ();
-    }
-    if(op == op::withdraw_TON()) {
-        int amount_to_withdraw = in_msg_body~load_coins();
-
-        (slice data, int f) = states.udict_get?(256, slice_hash(sender_address));
-        if(f == 0) {
-            throw(error::not_staked);
-        }
-        int jettonAmount = data~load_coins();
-        int tonAmount = data~load_coins();
-        throw_unless(error::not_enough, tonAmount >= amount_to_withdraw);
-
-        send_ton(sender_address, amount_to_withdraw);
-        states~udict_set(256, slice_hash(sender_address),
-                begin_cell().store_coins(jettonAmount).store_coins(tonAmount - amount_to_withdraw).end_cell().begin_parse());
-
-        emit_log_simple(op::withdraw_TON(), begin_cell().store_coins(amount_to_withdraw).end_cell().begin_parse());
-
+        emit_log_simple(op::stake_TONNEL(), begin_cell().store_uint(0,4).store_slice(origin_sender).store_coins(send_amount).store_uint(creed_id, 64).end_cell().begin_parse());
         save_data(states, jetton_info, admin_info);
         return ();
     }
     if (op == op::withdraw_TONNEL()) {
         int amount_to_withdraw = in_msg_body~load_coins();
+        int creed_id = in_msg_body~load_uint(64);
+        slice dict_key = begin_cell().store_slice(sender_address).store_uint(creed_id, 64).end_cell().begin_parse();
 
-        (slice data, int f) = states.udict_get?(256, slice_hash(sender_address));
+        (slice data, int f) = states.udict_get?(256, slice_hash(dict_key));
         if(f == 0) {
             throw(error::not_staked);
         }
         int jettonAmount = data~load_coins();
-        int tonAmount = data~load_coins();
         throw_unless(error::not_enough, jettonAmount >= amount_to_withdraw);
         slice jetton_info_slice = jetton_info.begin_parse();
         slice jetton_master_address = jetton_info_slice~load_msg_addr();
         cell JETTON_BYTECODE = jetton_info_slice~load_ref();
         send_jetton(sender_address, amount_to_withdraw, jetton_master_address, JETTON_BYTECODE);
 
-        states~udict_set(256, slice_hash(sender_address),
-                begin_cell().store_coins(jettonAmount - amount_to_withdraw).store_coins(tonAmount).end_cell().begin_parse());
+        states~udict_set(256, slice_hash(dict_key),
+                begin_cell().store_coins(jettonAmount - amount_to_withdraw).end_cell().begin_parse());
 
-        emit_log_simple(op::withdraw_TONNEL(), begin_cell().store_coins(amount_to_withdraw).end_cell().begin_parse());
+        emit_log_simple(op::withdraw_TONNEL(), begin_cell().store_uint(1,4).store_coins(amount_to_withdraw).store_uint(creed_id, 64).end_cell().begin_parse());
         save_data(states, jetton_info, admin_info);
         return ();
     }
 
-    if(op == op::set_TONNEL()){
+    if(op == op::claim_TON()){
         slice admin_info_slice = admin_info.begin_parse();
         slice admin_address = admin_info_slice~load_msg_addr();
         throw_unless(error::not_admin, equal_slices(sender_address, admin_address));
-        slice jetton_master_address = in_msg_body~load_msg_addr();
-        cell JETTON_BYTECODE = in_msg_body~load_ref();
-        jetton_info = begin_cell().store_slice(jetton_master_address).store_ref(JETTON_BYTECODE).end_cell();
-        save_data(states, jetton_info, admin_info);
+
+        send_ton(sender_address, my_balance - ONE_TON, 1);
+        return ();
+    }
+
+    if(op == op::claim_TONNEL()){
+        int amount_to_withdraw = in_msg_body~load_coins();
+        slice admin_info_slice = admin_info.begin_parse();
+        slice admin_address = admin_info_slice~load_msg_addr();
+        throw_unless(error::not_admin, equal_slices(sender_address, admin_address));
+
+        slice jetton_info_slice = jetton_info.begin_parse();
+        slice jetton_master_address = jetton_info_slice~load_msg_addr();
+        cell JETTON_BYTECODE = jetton_info_slice~load_ref();
+        send_jetton(sender_address, amount_to_withdraw, jetton_master_address, JETTON_BYTECODE);
         return ();
     }
     throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+(tuple) get_user_state(slice user, tuple creeds) method_id {
+    (cell states, _, _) = load_data();
+    int len = tuples::tlen(creeds);
+    tuple res = empty_tuple();
+    int i = 0;
+    while (i < len) {
+        int creed_id = creeds.at(i);
+        slice dict_key = begin_cell().store_slice(user).store_uint(creed_id, 64).end_cell().begin_parse();
+
+        (slice data, int f) = states.udict_get?(256, slice_hash(dict_key));
+        int jettonAmount = 0;
+        ifnot (f == 0) {
+            jettonAmount = data~load_coins();
+
+        }
+
+        res~tpush(jettonAmount);
+        i += 1;
+    }
+
+
+    return res;
 }
 
 

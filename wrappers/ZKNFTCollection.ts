@@ -32,8 +32,8 @@ const serializeUri = (uri: string) => {
 }
 
 function create_content() {
-  const contentBuffer = serializeUri("https://api.tonnel.network/test/illuminati/meta");
-  const contentBaseBuffer = serializeUri("https://api.tonnel.network/test/illuminati/");
+  const contentBuffer = serializeUri("https://api.tonnel.network/illuminati/meta");
+  const contentBaseBuffer = serializeUri("https://api.tonnel.network/illuminati/");
   var content_cell = beginCell().storeUint(OFFCHAIN_CONTENT_PREFIX, 8);
   contentBuffer.forEach((byte) => {
     content_cell.storeUint(byte, 8);
@@ -72,7 +72,7 @@ export function ZKNFTCollectionConfigToCell(config: ZKNFTCollectionConfig) {
       .storeRef(beginCell().storeAddress(config.masterJetton).storeRef(config.jettonWalletCell).endCell())
       .storeRef(beginCell().storeUint(0,8).storeUint(0,32).storeDict(roots).endCell())
       .storeDict(null)
-        .storeRef(beginCell().storeUint(0,8).storeCoins(toNano('2')).storeDict(discounts).storeDict(null).endCell())
+        .storeRef(beginCell().storeUint(0,8).storeCoins(toNano('1')).storeDict(discounts).storeDict(null).endCell())
       .endCell())
     .endCell();
 }

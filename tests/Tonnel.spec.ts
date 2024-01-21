@@ -23,7 +23,7 @@ const vkeyInsertPath = path.join(__dirname, "../build/insert/verification_key.js
 const vkeyInsert = require(vkeyInsertPath);
 
 const fee = 0.015;
-const pool_size = 50;
+const pool_size = 5;
 const deposit_fee = 0.18;
 const withdraw_fee = 0.15;
 
@@ -100,7 +100,7 @@ describe('Tonnel', () => {
       from: tonnel.address,
       to: owner.address,
       success: true,
-      value: toNano((pool_size * fee).toString()),
+      value: toNano((pool_size * fee).toFixed(9)),
     });
 
     expect(depositResult.transactions).toHaveTransaction({
@@ -195,7 +195,7 @@ describe('Tonnel', () => {
       value: toNano('0.05'),
       new_fee_per_thousand: 15,
       new_tonnel_mint_amount_deposit: 100,
-      new_tonnel_mint_amount_relayer: 50,
+      new_tonnel_mint_amount_relayer: 500,
     })
     expect(changeConfig.transactions).toHaveTransaction({
       from: owner.address,
@@ -280,7 +280,7 @@ describe('Tonnel', () => {
       from: tonnel.address,
       to: owner.address,
       success: true,
-      value: toNano((pool_size * fee).toString()),
+      value: toNano((pool_size * fee).toFixed(9)),
     });
 
     expect(depositResult.transactions).toHaveTransaction({
@@ -298,7 +298,7 @@ describe('Tonnel', () => {
 
 
 
-    expect(await jettonWalletDepositorContract.getBalance()).toEqual(toNano(100))
+    expect(await jettonWalletDepositorContract.getBalance()).toEqual(toNano(1))
 
     expect(await tonnel.getBalance()).toBeGreaterThan(toNano(pool_size))
 
@@ -422,7 +422,7 @@ describe('Tonnel', () => {
       to: jettonWalletRelayerContract.address,
       success: true,
     })
-    expect(await jettonWalletRelayerContract.getBalance()).toEqual(toNano(50))
+    expect(await jettonWalletRelayerContract.getBalance()).toEqual(toNano(5))
 
 
     console.log('after', await tonnel.getBalance());

@@ -643,7 +643,7 @@ int builder_null?(builder b) asm "ISNULL";
 ;; slice bls_map_to_g1(slice f) asm "BLS_MAP_TO_G1";
 ;; int bls_verify(slice pk, slice msg, slice sgn) asm "BLS_VERIFY";
 
-;; int tuples::tlen(tuple t) asm "TLEN";
+ int tuples::tlen(tuple t) asm "TLEN";
 ;; forall X -> (tuple) to_tuple (X x) asm "NOP";
 ;; forall X -> X at_index (tuple t, int idx) asm "INDEXVAR";
 

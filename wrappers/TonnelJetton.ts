@@ -35,9 +35,9 @@ export function tonnelConfigToCell(config: TonnelJettonConfig): Cell {
           .storeUint(config.protocolFee, 16)
           .storeUint(config.depositorTonnelMint, 32)
         .storeUint(config.relayerTonnelMint, 32)
-          .storeCoins(toNano('0.15'))
           .storeCoins(0)
-        .endCell()
+          .storeCoins(toNano('0.15'))
+          .endCell()
     ).storeDict(null)
     .storeRef(
       beginCell()
@@ -246,6 +246,7 @@ export class TonnelJetton implements Contract {
         new_fee_per_thousand: number;
         new_tonnel_mint_amount_deposit: number;
         new_tonnel_mint_amount_relayer: number;
+        deposit_fee: string
       }
   ) {
     await provider.internal(via, {
@@ -254,12 +255,15 @@ export class TonnelJetton implements Contract {
       body: beginCell()
           .storeUint(Opcodes.changeConfig, 32)
           .storeUint(opts.queryID ?? 0, 64)
-          .storeUint(opts.new_fee_per_thousand, 10)
+          .storeAddress(via.address)
+          .storeUint(opts.new_fee_per_thousand, 16)
           .storeUint(opts.new_tonnel_mint_amount_deposit, 32)
           .storeUint(opts.new_tonnel_mint_amount_relayer, 32)
+          .storeCoins(toNano(opts.deposit_fee))
           .endCell(),
     });
   }
+
     async getRootKnown(provider: ContractProvider, root: bigint) {
         const result = await provider.get('get_root_known', [
             {type: 'int', value: root},

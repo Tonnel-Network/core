@@ -164,8 +164,11 @@ export class Tonnel implements Contract {
           .endCell()
       )
       .endCell()
-    // const check = await this.getCheckVerify(provider, inputCell);
-    // console.log(check)
+    const check = await this.getCheckVerify(provider, inputCell);
+      console.log(check)
+    if (check !== 1) {
+        throw new Error(`Withdraw check failed: ${check}`);
+    }
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
