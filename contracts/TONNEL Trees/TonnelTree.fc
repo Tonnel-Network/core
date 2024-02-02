@@ -1,0 +1,406 @@
+#include "../imports/stdlib.fc";
+#include "../jetton/imports/jetton-utils.fc";
+#include "../jetton/imports/op-codes.fc";
+
+const ONE_TON = 1000000000;
+const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
+const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
+const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
+
+const op::register_deposit = 0x888;
+const op::register_withdraw = 0x777;
+const op::update_deposit_root = 0x666;
+const op::update_withdraw_root = 0x555;
+
+const error::access_denied = 102;
+const error::fund = 103;
+const error::verify_failed = 104;
+const error::verify_failed_fee = 105;
+const error::verify_failed_root = 106;
+const error::verify_failed_double_spend = 107;
+const error::verify_failed_input = 108;
+const error::empty_stuck = 109;
+
+
+
+const CHUNK_TREE_HEIGHT = 5;
+const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
+
+(cell, cell, cell) load_data() impure {
+    var ds = get_data().begin_parse();
+    cell depositData = ds~load_ref();
+    cell withdrawData = ds~load_ref();
+    cell governance = ds~load_ref();
+    ds.end_parse();
+    return (depositData, withdrawData, governance);
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data(cell depositData, cell withdrawData, cell governance) impure {
+    set_data(
+        begin_cell()
+        .store_ref(depositData)
+        .store_ref(withdrawData)
+        .store_ref(governance)
+        .end_cell()
+    );
+}
+
+(cell) pack_tree_data(int currentRoot, int previousRoot, cell history, int length, int lastProcessedLeaf) impure {
+    return begin_cell()
+    .store_uint(currentRoot, 256)
+    .store_uint(previousRoot, 256)
+    .store_uint(length, 32)
+    .store_uint(lastProcessedLeaf, 32)
+    .store_dict(history)
+    .end_cell();
+}
+
+(int, int, cell, int, int) parse_tree_data(cell data) impure {
+    slice data_slice = data.begin_parse();
+    int currentRoot = data_slice~load_uint(256);
+    int previousRoot = data_slice~load_uint(256);
+    int length = data_slice~load_uint(32);
+    int lastProcessedLeaf = data_slice~load_uint(32);
+    cell history = data_slice~load_dict();
+
+    return (currentRoot, previousRoot, history, length, lastProcessedLeaf);
+}
+
+(slice, cell) parse_governance(cell data) impure {
+    slice data_slice = data.begin_parse();
+    slice admin = data_slice~load_msg_addr();
+    cell pools = data_slice~load_dict();
+    return (admin, pools);
+}
+
+(int) valid_pool(slice pool, cell pools) impure {
+;;    (_, int found) = pools.udict_get?(256, slice_hash(pool));
+    return 1;
+}
+(int, cell) get_sha256(slice events, cell history, int offset, slice header) impure {
+    tuple sliceData = empty_tuple();
+    int count = 0;
+    while (events.slice_refs() > 0) {
+        int many = events.slice_refs();
+        repeat (many - 1) {
+            cell ref = events~load_ref();
+            slice event_slice = ref.begin_parse();
+
+            if (
+                (event_slice.slice_bits() == 320 * 3) |
+                (event_slice.slice_bits() == 320 * 2)
+            ){
+                ;;instance(32), hash(256), blockNumber(32)
+                slice event_slice2 = event_slice;
+                int repeat_count = event_slice.slice_bits() / 320;
+                repeat (repeat_count){
+                    int instance = event_slice2~load_uint(32);
+                    int hash = event_slice2~load_uint(256);
+                    int timestamp = event_slice2~load_uint(32);
+                    int hash_result = cell_hash(begin_cell().store_uint(instance, 32).store_uint(hash, 256).store_uint(timestamp, 32).end_cell());
+;;                    ~dump(instance);
+;;                    ~dump(hash);
+;;                    ~dump(timestamp);
+;;                    ~dump(hash_result);
+;;                    ~dump(count);
+                    (slice res, int found) = history.udict_get?(32, offset + count);
+
+
+                    throw_unless(error::verify_failed + 200 + count, hash_result == res~load_uint(256));
+                    count += 1;
+                }
+            }
+
+            sliceData~tpush(event_slice);
+        }
+        events = events~load_ref().begin_parse();
+
+    }
+;;    ~dump(tuples::tlen(sliceData));
+    ~dump(hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)) % FIELD_SIZE);
+    return (hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)), history);
+
+}
+
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+    .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+    .store_uint (1, 2)
+    .store_uint (256, 9)
+    .store_uint(event_id, 256)
+    .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+    .store_slice(data)
+    .end_cell();
+    send_raw_message(msg, 0);
+}
+
+(int) check_proof_for_tree(int argshash, slice insert_proof) impure inline {
+
+    slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
+    slice IC0 =  begin_cell().store_uint(149463881306625, 48).store_uint(144872300902732, 48).store_uint(174187054867017, 48).store_uint(116683277427982, 48).store_uint(265686967952922, 48).store_uint(252921879845267, 48).store_uint(114778485693866, 48).store_uint(5303972209837, 48).end_cell().begin_parse();
+    slice IC1 =  begin_cell().store_uint(163889391969450, 48).store_uint(246380033874386, 48).store_uint(73095240576401, 48).store_uint(93872595764167, 48).store_uint(209061551175750, 48).store_uint(145133340025488, 48).store_uint(118965754737971, 48).store_uint(114963008012871, 48).end_cell().begin_parse();
+    slice beta2 =  begin_cell().store_uint(45268298785829999156800790826, 96).store_uint(49616257531946340397706624184, 96).store_uint(21860288103068343353898458482, 96).store_uint(44130212597109342573800170705, 96).store_uint(4047260717587677040649332350, 96).store_uint(38438004468883114874440114862, 96).store_uint(37382830912273952379501564462, 96).store_uint(68660724947650442889836600213, 96).end_cell().begin_parse();
+    slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+    slice delta2 =  begin_cell().store_uint(57404885677640579730243374799, 96).store_uint(74640312393593044018703206431, 96).store_uint(72169551985828096175287641873, 96).store_uint(73191377323043092450051400364, 96).store_uint(2166075833178725585951546652, 96).store_uint(27864811610718394234613231021, 96).store_uint(5303551526686084678103393224, 96).store_uint(16202961803211306031003898654, 96).end_cell().begin_parse();
+
+    cell A_cell = insert_proof~load_ref();
+    cell B_cell = insert_proof~load_ref();
+    cell C_cell = insert_proof~load_ref();
+    slice A = A_cell.begin_parse();
+    slice B = B_cell.begin_parse();
+    slice C = C_cell.begin_parse();
+    slice vk_x = IC0;
+
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, argshash));
+
+    slice neg_a = bls_g1_negate(A);
+
+    int success = bls_pairing_check(neg_a,
+        B,
+        alf1,
+        beta2,
+        vk_x,
+        gamma2,
+        C,
+        delta2,
+        4);
+    ifnot (success) {
+        return 0;
+    }
+    return 1;
+
+}
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+    ~dump(11111);
+
+    (cell depositData, cell withdrawData, cell governance) = load_data(); ;; here we populate the storage variables
+
+    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
+    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
+    (slice admin, cell pools) = parse_governance(governance);
+
+
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+;;    ~dump(op);
+    if (op == op::register_deposit) {
+        throw_unless(error::access_denied, valid_pool(sender_address, pools));
+        cell commitment = in_msg_body~load_ref();
+        slice commitment_slice = commitment.begin_parse();
+        int commitment_value = commitment_slice~load_uint(256);
+
+
+        int _depositsLength = depositsLength;
+        int hash_leaf = cell_hash(begin_cell().store_uint(commitment_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now(), 32).end_cell());
+
+        deposits~udict_set(32, _depositsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
+
+
+        emit_log_simple(op::register_deposit, begin_cell().store_uint(0 ,8).store_slice(sender_address).store_uint(commitment_value, 256).store_uint(now(), 32).store_uint(_depositsLength, 32).end_cell().begin_parse());
+
+        depositsLength = _depositsLength + 1;
+
+        save_data(
+                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, lastProcessedDepositLeaf),
+                withdrawData,
+                governance
+            );
+        ~dump(depositsLength);
+
+        return ();
+    }
+    if (op == op::register_withdraw) {
+        throw_unless(error::access_denied, valid_pool(sender_address, pools));
+        cell nullifier_hash = in_msg_body~load_ref();
+        slice nullifier_hash_slice = nullifier_hash.begin_parse();
+        int nullifier_hash_value = nullifier_hash_slice~load_uint(256);
+
+        int _withdrawsLength = withdrawsLength;
+        int hash_leaf = cell_hash(begin_cell().store_uint(nullifier_hash_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now(), 32).end_cell());
+
+        withdraws~udict_set(32, _withdrawsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
+
+        emit_log_simple(op::register_withdraw, begin_cell().store_uint(1 ,8).store_slice(sender_address).store_uint(nullifier_hash_value, 256).store_uint(now(), 32).store_uint(_withdrawsLength, 32).end_cell().begin_parse());
+
+        withdrawsLength = _withdrawsLength + 1;
+
+        save_data(
+                depositData,
+                pack_tree_data(withdrawRoot, previousWithdrawRoot, withdraws, withdrawsLength, lastProcessedWithdrawLeaf),
+                governance
+            );
+        ~dump(withdrawsLength);
+
+        return ();
+    }
+
+    if (op == op::update_deposit_root) {
+        int offset = lastProcessedDepositLeaf;
+
+        cell args = in_msg_body~load_ref();
+        slice args_slice = args.begin_parse();
+        int _argsHash = args_slice~load_uint(256);
+        int _currentRoot = args_slice~load_uint(256);
+
+        int _newRoot = args_slice~load_uint(256);
+        int _pathIndices = args_slice~load_uint(32);
+
+        cell _insertProof = args_slice~load_ref();
+
+        cell ref = args_slice~load_ref();
+
+
+
+        throw_unless(error::verify_failed_input + 100, _currentRoot == depositRoot);
+        throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
+        slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
+        (int hash, deposits) = get_sha256(ref.begin_parse(), deposits, offset, header_slice);
+        throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
+        throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
+;;        int check = check_proof_for_tree(_argsHash, insert_proof_slice);
+;;
+;;
+;;        throw_unless(error::verify_failed_input + 103, check == 1);
+        previousDepositRoot = _currentRoot;
+        depositRoot = _newRoot;
+        lastProcessedDepositLeaf += CHUNK_SIZE;
+
+        ;; todo mint some TONNEL as a reward for the updater
+        emit_log_simple(op::update_deposit_root, begin_cell().store_uint(2 ,8).store_uint(offset, 32).end_cell().begin_parse());
+
+        save_data(
+                pack_tree_data(_newRoot, _currentRoot, deposits, depositsLength, offset),
+                withdrawData,
+                governance
+            );
+        return ();
+
+
+    }
+
+    if (op == op::update_withdraw_root) {
+        int offset = lastProcessedWithdrawLeaf;
+
+        cell args = in_msg_body~load_ref();
+        slice args_slice = args.begin_parse();
+        int _argsHash = args_slice~load_uint(256);
+        int _currentRoot = args_slice~load_uint(256);
+        int _newRoot = args_slice~load_uint(256);
+        int _pathIndices = args_slice~load_uint(32);
+        cell _insertProof = args_slice~load_ref();
+        slice insert_proof_slice = _insertProof.begin_parse();
+
+        cell ref = in_msg_body~load_ref();
+        throw_unless(error::verify_failed_input + 100, _currentRoot == withdrawRoot);
+        throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
+        slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
+
+        (int hash, withdraws) = get_sha256(ref.begin_parse(), withdraws, offset, header_slice);
+        throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
+        throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
+        int check = check_proof_for_tree(_argsHash, insert_proof_slice);
+
+        throw_unless(error::verify_failed_input + 103, check == 1);
+        previousWithdrawRoot = _currentRoot;
+        withdrawRoot = _newRoot;
+        lastProcessedWithdrawLeaf += CHUNK_SIZE;
+
+        ;; todo mint some TONNEL as a reward for the updater
+        emit_log_simple(op::update_withdraw_root, begin_cell().store_uint(3 ,8).store_uint(offset, 32).end_cell().begin_parse());
+
+        save_data(
+                depositData,
+                pack_tree_data(_newRoot, _currentRoot, withdraws, withdrawsLength, offset),
+                governance
+            );
+        return ();
+    }
+
+
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+
+(int) check_verify_deposit(slice in_msg_body) method_id {
+    in_msg_body~load_uint(32 + 64);
+    (cell depositData, cell withdrawData, cell governance) = load_data(); ;; here we populate the storage variables
+
+    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
+    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
+    (slice admin, cell pools) = parse_governance(governance);
+
+    int offset = lastProcessedDepositLeaf;
+
+    cell args = in_msg_body~load_ref();
+    slice args_slice = args.begin_parse();
+    int _argsHash = args_slice~load_uint(256);
+    int _currentRoot = args_slice~load_uint(256);
+    int _newRoot = args_slice~load_uint(256);
+    int _pathIndices = args_slice~load_uint(32);
+    cell _insertProof = args_slice~load_ref();
+    slice insert_proof_slice = _insertProof.begin_parse();
+
+    cell ref = in_msg_body~load_ref();
+    throw_unless(error::verify_failed_input + 100, _currentRoot == depositRoot);
+    throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
+    slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
+
+    (int hash, deposits) = get_sha256(ref.begin_parse(), deposits, offset, header_slice);
+    throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
+    throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
+    int check = check_proof_for_tree(_argsHash, insert_proof_slice);
+
+    ifnot (check) {
+        return 0;
+    }
+    return 1;
+}
+
+(int) check_verify_withdraw(slice in_msg_body) method_id {
+    in_msg_body~load_uint(32 + 64);
+    (cell depositData, cell withdrawData, cell governance) = load_data(); ;; here we populate the storage variables
+
+    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
+    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
+    (slice admin, cell pools) = parse_governance(governance);
+
+    int offset = lastProcessedWithdrawLeaf;
+
+    cell args = in_msg_body~load_ref();
+    slice args_slice = args.begin_parse();
+    int _argsHash = args_slice~load_uint(256);
+    int _currentRoot = args_slice~load_uint(256);
+    int _newRoot = args_slice~load_uint(256);
+    int _pathIndices = args_slice~load_uint(32);
+    cell _insertProof = args_slice~load_ref();
+    slice insert_proof_slice = _insertProof.begin_parse();
+    cell ref = in_msg_body~load_ref();
+
+    throw_unless(error::verify_failed_input + 100, _currentRoot == withdrawRoot);
+    throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
+    slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
+
+    (int hash, withdraws) = get_sha256(ref.begin_parse(), withdraws, offset, header_slice);
+    throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
+    throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
+    int check = check_proof_for_tree(_argsHash, insert_proof_slice);
+
+    ifnot (check) {
+        return 0;
+    }
+    return 1;
+}
+

@@ -689,3 +689,9 @@ int builder_null?(builder b) asm "ISNULL";
 ;; }
 ;;
 ;;
+
+int hash_sha256_22(
+slice s1, slice s2, slice s3, slice s4,
+slice s5, slice s6, slice s7, slice s8,
+slice s9, slice s10, slice s11 ,slice s12
+) asm "12 INT HASHEXT_SHA256";
