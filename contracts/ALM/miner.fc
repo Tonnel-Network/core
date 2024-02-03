@@ -1,0 +1,562 @@
+#include "../imports/stdlib.fc";
+#include "../jetton/imports/jetton-utils.fc";
+#include "../jetton/imports/op-codes.fc";
+
+const ONE_TON = 1000000000;
+const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
+const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
+const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
+const ACCOUNT_ROOT_HISTORY_SIZE = 100;
+
+const op::new_account = 0x888;
+const op::reward = 0x777;
+const op::withdraw = 0x666;
+
+const error::access_denied = 102;
+const error::fund = 103;
+const error::verify_failed = 104;
+const error::verify_failed_fee = 105;
+const error::verify_failed_root = 106;
+const error::verify_failed_double_spend = 107;
+const error::verify_failed_input = 108;
+const error::empty_stuck = 109;
+
+
+global cell accountNullifiers;
+global cell rewardNullifiers;
+global cell rates;
+global cell accountRoots;
+
+global slice ADMIN_ADDRESS;
+global slice REWARD_SWAP_ADDRESS;
+global slice TONNEL_TREE_ADDRESS;
+
+global int accountCount;
+
+
+
+
+;;TreeUpdateArgs
+;;    oldRoot: uint256
+;;    newRoot: uint256
+;;    leaf: uint256
+;;    pathIndices: uint32
+global int TreeUpdateArgs::oldRoot;
+global int TreeUpdateArgs::newRoot;
+global int TreeUpdateArgs::leaf;
+global int TreeUpdateArgs::pathIndices;
+
+;;AccountUpdate
+;; inputRoot  uint256
+;; inputNullifierHash  uint256
+;; outputRoot  uint256
+;; outputPathIndices  uint32
+;; outputCommitment  uint256
+
+global int AccountUpdate::inputRoot;
+global int AccountUpdate::inputNullifierHash;
+global int AccountUpdate::outputRoot;
+global int AccountUpdate::outputPathIndices;
+global int AccountUpdate::outputCommitment;
+
+
+
+
+() load_data() impure {
+    var ds = get_data().begin_parse();
+    accountCount = ds~load_uint(32);
+    cell dicts = ds~load_ref();
+    slice dicts_slice = dicts.begin_parse();
+    accountNullifiers = dicts_slice~load_dict();
+    rewardNullifiers = dicts_slice~load_dict();
+    rates = dicts_slice~load_dict();
+    accountRoots = dicts_slice~load_dict();
+
+
+
+    cell addresses = ds~load_ref();
+    slice addresses_slice = addresses.begin_parse();
+
+
+    ADMIN_ADDRESS = addresses_slice~load_msg_addr();
+    REWARD_SWAP_ADDRESS = addresses_slice~load_msg_addr();
+    TONNEL_TREE_ADDRESS = addresses_slice~load_msg_addr();
+
+
+    ds.end_parse();
+    return ();
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data() impure {
+    set_data(
+        begin_cell()
+        .store_uint(accountCount, 32)
+        .store_ref(
+            begin_cell()
+            .store_dict(accountNullifiers)
+            .store_dict(rewardNullifiers)
+            .store_dict(rates)
+            .store_dict(accountRoots)
+            .end_cell()
+        ).store_ref(
+            begin_cell()
+            .store_slice(ADMIN_ADDRESS)
+            .store_slice(REWARD_SWAP_ADDRESS)
+            .store_slice(TONNEL_TREE_ADDRESS)
+            .end_cell()
+        )
+        .end_cell()
+    );
+}
+
+(int) get_rate_pool(int pool) impure {
+    (slice data, int found) = rates.udict_get?(32, pool);
+    throw_unless(error::access_denied, found);
+    return data~load_uint(32);
+}
+
+(int, cell) get_sha256(slice events, cell history, int offset, slice header) impure {
+    tuple sliceData = empty_tuple();
+    int count = 0;
+    while (events.slice_refs() > 0) {
+        int many = events.slice_refs();
+        repeat (many - 1) {
+            cell ref = events~load_ref();
+            slice event_slice = ref.begin_parse();
+
+            if (
+                (event_slice.slice_bits() == 320 * 3) |
+                (event_slice.slice_bits() == 320 * 2)
+            ){
+                ;;instance(32), hash(256), blockNumber(32)
+                slice event_slice2 = event_slice;
+                int repeat_count = event_slice.slice_bits() / 320;
+                repeat (repeat_count){
+                    int instance = event_slice2~load_uint(32);
+                    int hash = event_slice2~load_uint(256);
+                    int timestamp = event_slice2~load_uint(32);
+                    int hash_result = cell_hash(begin_cell().store_uint(instance, 32).store_uint(hash, 256).store_uint(timestamp, 32).end_cell());
+;;                    ~dump(instance);
+;;                    ~dump(hash);
+;;                    ~dump(timestamp);
+;;                    ~dump(hash_result);
+;;                    ~dump(count);
+                    (slice res, int found) = history.udict_get?(32, offset + count);
+
+
+                    throw_unless(error::verify_failed + 200 + count, hash_result == res~load_uint(256));
+                    count += 1;
+                }
+            }
+
+            sliceData~tpush(event_slice);
+        }
+        events = events~load_ref().begin_parse();
+
+    }
+;;    ~dump(tuples::tlen(sliceData));
+    ~dump(hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)) % FIELD_SIZE);
+    return (hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)), history);
+
+}
+
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+    .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+    .store_uint (1, 2)
+    .store_uint (256, 9)
+    .store_uint(event_id, 256)
+    .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+    .store_slice(data)
+    .end_cell();
+    send_raw_message(msg, 0);
+}
+
+(int) check_proof_for_reward(int rate, int fee, int instance, int rewardNullifier, int depositRoot,
+        int withdrawalRoot, slice insert_proof) impure inline {
+    slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
+    slice IC0 =  begin_cell().store_uint(149463881306625, 48).store_uint(144872300902732, 48).store_uint(174187054867017, 48).store_uint(116683277427982, 48).store_uint(265686967952922, 48).store_uint(252921879845267, 48).store_uint(114778485693866, 48).store_uint(5303972209837, 48).end_cell().begin_parse();
+    slice IC1 =  begin_cell().store_uint(163889391969450, 48).store_uint(246380033874386, 48).store_uint(73095240576401, 48).store_uint(93872595764167, 48).store_uint(209061551175750, 48).store_uint(145133340025488, 48).store_uint(118965754737971, 48).store_uint(114963008012871, 48).end_cell().begin_parse();
+    slice beta2 =  begin_cell().store_uint(45268298785829999156800790826, 96).store_uint(49616257531946340397706624184, 96).store_uint(21860288103068343353898458482, 96).store_uint(44130212597109342573800170705, 96).store_uint(4047260717587677040649332350, 96).store_uint(38438004468883114874440114862, 96).store_uint(37382830912273952379501564462, 96).store_uint(68660724947650442889836600213, 96).end_cell().begin_parse();
+    slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+    slice delta2 =  begin_cell().store_uint(57404885677640579730243374799, 96).store_uint(74640312393593044018703206431, 96).store_uint(72169551985828096175287641873, 96).store_uint(73191377323043092450051400364, 96).store_uint(2166075833178725585951546652, 96).store_uint(27864811610718394234613231021, 96).store_uint(5303551526686084678103393224, 96).store_uint(16202961803211306031003898654, 96).end_cell().begin_parse();
+
+    cell A_cell = insert_proof~load_ref();
+    cell B_cell = insert_proof~load_ref();
+    cell C_cell = insert_proof~load_ref();
+    slice A = A_cell.begin_parse();
+    slice B = B_cell.begin_parse();
+    slice C = C_cell.begin_parse();
+    slice vk_x = IC0;
+
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, rate));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, fee));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, instance));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, rewardNullifier));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::inputRoot));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::inputNullifierHash));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::outputRoot));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::outputPathIndices));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::outputCommitment));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, depositRoot));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, withdrawalRoot));
+
+
+
+    slice neg_a = bls_g1_negate(A);
+
+    int success = bls_pairing_check(neg_a,
+        B,
+        alf1,
+        beta2,
+        vk_x,
+        gamma2,
+        C,
+        delta2,
+        4);
+    ifnot (success) {
+        return 0;
+    }
+    return 1;
+
+}
+
+(int) check_proof_for_withdraw(int amount, int extDataHash, slice insert_proof) impure inline {
+
+    slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
+    slice IC0 =  begin_cell().store_uint(149463881306625, 48).store_uint(144872300902732, 48).store_uint(174187054867017, 48).store_uint(116683277427982, 48).store_uint(265686967952922, 48).store_uint(252921879845267, 48).store_uint(114778485693866, 48).store_uint(5303972209837, 48).end_cell().begin_parse();
+    slice IC1 =  begin_cell().store_uint(163889391969450, 48).store_uint(246380033874386, 48).store_uint(73095240576401, 48).store_uint(93872595764167, 48).store_uint(209061551175750, 48).store_uint(145133340025488, 48).store_uint(118965754737971, 48).store_uint(114963008012871, 48).end_cell().begin_parse();
+    slice beta2 =  begin_cell().store_uint(45268298785829999156800790826, 96).store_uint(49616257531946340397706624184, 96).store_uint(21860288103068343353898458482, 96).store_uint(44130212597109342573800170705, 96).store_uint(4047260717587677040649332350, 96).store_uint(38438004468883114874440114862, 96).store_uint(37382830912273952379501564462, 96).store_uint(68660724947650442889836600213, 96).end_cell().begin_parse();
+    slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+    slice delta2 =  begin_cell().store_uint(57404885677640579730243374799, 96).store_uint(74640312393593044018703206431, 96).store_uint(72169551985828096175287641873, 96).store_uint(73191377323043092450051400364, 96).store_uint(2166075833178725585951546652, 96).store_uint(27864811610718394234613231021, 96).store_uint(5303551526686084678103393224, 96).store_uint(16202961803211306031003898654, 96).end_cell().begin_parse();
+
+    cell A_cell = insert_proof~load_ref();
+    cell B_cell = insert_proof~load_ref();
+    cell C_cell = insert_proof~load_ref();
+    slice A = A_cell.begin_parse();
+    slice B = B_cell.begin_parse();
+    slice C = C_cell.begin_parse();
+    slice vk_x = IC0;
+
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, amount));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, extDataHash));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::inputRoot));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::inputNullifierHash));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::outputRoot));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::outputPathIndices));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, AccountUpdate::outputCommitment));
+
+
+
+    slice neg_a = bls_g1_negate(A);
+
+    int success = bls_pairing_check(neg_a,
+        B,
+        alf1,
+        beta2,
+        vk_x,
+        gamma2,
+        C,
+        delta2,
+        4);
+    ifnot (success) {
+        return 0;
+    }
+    return 1;
+
+}
+
+
+(int) check_proof_for_insert(slice insert_proof) impure inline {
+
+
+    slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
+    slice IC0 =  begin_cell().store_uint(149463881306625, 48).store_uint(144872300902732, 48).store_uint(174187054867017, 48).store_uint(116683277427982, 48).store_uint(265686967952922, 48).store_uint(252921879845267, 48).store_uint(114778485693866, 48).store_uint(5303972209837, 48).end_cell().begin_parse();
+    slice IC1 =  begin_cell().store_uint(163889391969450, 48).store_uint(246380033874386, 48).store_uint(73095240576401, 48).store_uint(93872595764167, 48).store_uint(209061551175750, 48).store_uint(145133340025488, 48).store_uint(118965754737971, 48).store_uint(114963008012871, 48).end_cell().begin_parse();
+    slice IC2 =  begin_cell().store_uint(154611330325417, 48).store_uint(56883882533380, 48).store_uint(256864073646890, 48).store_uint(110223718526805, 48).store_uint(41488761585151, 48).store_uint(66949550052602, 48).store_uint(59725992543201, 48).store_uint(60822399158111, 48).end_cell().begin_parse();
+    slice IC3 =  begin_cell().store_uint(204323902231497, 48).store_uint(146515902261225, 48).store_uint(223686418609716, 48).store_uint(63159927913005, 48).store_uint(266511227424255, 48).store_uint(139647823215357, 48).store_uint(243275058806357, 48).store_uint(113688717611142, 48).end_cell().begin_parse();
+    slice IC4 =  begin_cell().store_uint(183046732570304, 48).store_uint(73751093200306, 48).store_uint(222619922391300, 48).store_uint(264954189415027, 48).store_uint(63818347814842, 48).store_uint(185189879229344, 48).store_uint(215937361595168, 48).store_uint(212335368650295, 48).end_cell().begin_parse();
+    slice beta2 =  begin_cell().store_uint(45268298785829999156800790826, 96).store_uint(49616257531946340397706624184, 96).store_uint(21860288103068343353898458482, 96).store_uint(44130212597109342573800170705, 96).store_uint(4047260717587677040649332350, 96).store_uint(38438004468883114874440114862, 96).store_uint(37382830912273952379501564462, 96).store_uint(68660724947650442889836600213, 96).end_cell().begin_parse();
+    slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+    slice delta2 =  begin_cell().store_uint(57404885677640579730243374799, 96).store_uint(74640312393593044018703206431, 96).store_uint(72169551985828096175287641873, 96).store_uint(73191377323043092450051400364, 96).store_uint(2166075833178725585951546652, 96).store_uint(27864811610718394234613231021, 96).store_uint(5303551526686084678103393224, 96).store_uint(16202961803211306031003898654, 96).end_cell().begin_parse();
+
+    cell A_cell = insert_proof~load_ref();
+    cell B_cell = insert_proof~load_ref();
+    cell C_cell = insert_proof~load_ref();
+    slice A = A_cell.begin_parse();
+    slice B = B_cell.begin_parse();
+    slice C = C_cell.begin_parse();
+    slice vk_x = IC0;
+
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, TreeUpdateArgs::oldRoot));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, TreeUpdateArgs::newRoot));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, TreeUpdateArgs::leaf));
+    vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, TreeUpdateArgs::pathIndices));
+    slice neg_a = bls_g1_negate(A);
+
+    int success = bls_pairing_check(neg_a,
+        B,
+        alf1,
+        beta2,
+        vk_x,
+        gamma2,
+        C,
+        delta2,
+        4);
+    ifnot (success) {
+        return 0;
+    }
+    return 1;
+
+}
+
+
+(int) isKnownAccountRoot(int root, int _index) impure {
+    if (root == 0) {
+        return 0;
+    }
+    (slice res, int found) = accountRoots.udict_get?(256, _index % ACCOUNT_ROOT_HISTORY_SIZE);
+    if (found) {
+        return res~load_uint(256) == root;
+    }
+    return 0;
+}
+(int) getLastAccountRoot() impure {
+    (slice res, int found) = accountRoots.udict_get?(256, accountCount % ACCOUNT_ROOT_HISTORY_SIZE);
+    if (found) {
+        return res~load_uint(256);
+    }
+    return 0;
+}
+
+() insertAccountRoot(int root) impure {
+    accountCount += 1;
+    accountRoots~udict_set(256, accountCount % ACCOUNT_ROOT_HISTORY_SIZE, begin_cell().store_uint(root, 256).end_cell().begin_parse());
+    return ();
+}
+
+() setRates(int pool, int rate) impure {
+    rates~udict_set(32, pool, begin_cell().store_uint(rate, 32).end_cell().begin_parse());
+    return ();
+}
+
+() validateTreeUpdate(slice _treeUpdateProof) impure {
+    throw_unless(error::verify_failed + 4, TreeUpdateArgs::oldRoot == getLastAccountRoot());
+    throw_unless(error::verify_failed + 5, TreeUpdateArgs::leaf == AccountUpdate::outputCommitment);
+    throw_unless(error::verify_failed + 6, TreeUpdateArgs::pathIndices == accountCount);
+    int check = check_proof_for_insert(_treeUpdateProof);
+    throw_unless(error::verify_failed + 7, check == 1);
+
+}
+() validateAccountUpdate(slice _treeUpdateProof) impure {
+    (_, int found) = accountNullifiers.udict_get?(256, AccountUpdate::inputNullifierHash);
+    throw_unless(error::verify_failed + 1, found == 0);
+    if (AccountUpdate::inputRoot != getLastAccountRoot()) {
+        throw_unless(error::verify_failed + 2, isKnownAccountRoot(AccountUpdate::inputRoot, AccountUpdate::outputPathIndices));
+        validateTreeUpdate(_treeUpdateProof);
+    } else {
+        throw_unless(error::verify_failed + 3, AccountUpdate::outputPathIndices == accountCount);
+    }
+
+}
+
+() send_ton(slice recepient, int amount) impure inline {
+    var msg = begin_cell()
+    .store_uint(0x10, 6)
+    .store_slice(recepient)
+    .store_grams(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell();
+    send_raw_message(msg, 1);
+
+}
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+    ~dump(11111);
+
+    load_data(); ;; here we populate the storage variables
+
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+;;    ~dump(op);
+    if (op == op::reward) {
+        throw_unless(error::access_denied, equal_slices(sender_address, TONNEL_TREE_ADDRESS));
+        int depositRoot = in_msg_body~load_uint(256);
+        int withdrawalRoot = in_msg_body~load_uint(256);
+        cell _reward_args = in_msg_body~load_ref();
+        slice _reward_args_slice = _reward_args.begin_parse();
+        int rate = _reward_args_slice~load_uint(32);
+        int fee = _reward_args_slice~load_coins();
+        int instance = _reward_args_slice~load_uint(32);
+        int rewardNullifier = _reward_args_slice~load_uint(256);
+        slice relayer_address = _reward_args_slice~load_msg_addr();
+        AccountUpdate::inputRoot = _reward_args_slice~load_uint(256);
+        slice _reward_args_slice2 = _reward_args_slice~load_ref().begin_parse();
+        AccountUpdate::inputNullifierHash = _reward_args_slice2~load_uint(256);
+        AccountUpdate::outputRoot = _reward_args_slice2~load_uint(256);
+        AccountUpdate::outputPathIndices = _reward_args_slice2~load_uint(32);
+        AccountUpdate::outputCommitment = _reward_args_slice2~load_uint(256);
+
+
+        slice reward_proof = _reward_args_slice~load_ref().begin_parse();
+
+        cell _tree_args = in_msg_body~load_ref();
+        slice _tree_args_slice = _tree_args.begin_parse();
+        TreeUpdateArgs::oldRoot = _tree_args_slice~load_uint(256);
+        TreeUpdateArgs::newRoot = _tree_args_slice~load_uint(256);
+        TreeUpdateArgs::leaf = _tree_args_slice~load_uint(256);
+        TreeUpdateArgs::pathIndices = _tree_args_slice~load_uint(32);
+        slice tree_proof = _tree_args_slice~load_ref().begin_parse();
+
+        validateAccountUpdate(tree_proof);
+
+        throw_unless(error::verify_failed + 9, fee < 1 >> 248);
+        throw_unless(error::verify_failed + 10, (rate > 0) & (
+                get_rate_pool(instance) == rate
+        ));
+
+        (_, int found) = rewardNullifiers.udict_get?(256, rewardNullifier);
+        throw_unless(error::verify_failed + 11, found == 0);
+        int check = check_proof_for_reward(rate, fee, instance, rewardNullifier, depositRoot, withdrawalRoot, reward_proof);
+
+
+        throw_unless(error::verify_failed + 12, check == 1);
+
+        rewardNullifiers~udict_set(256, rewardNullifier, begin_cell().store_uint(1, 8).end_cell().begin_parse());
+        accountNullifiers~udict_set(256, AccountUpdate::inputNullifierHash, begin_cell().store_uint(1, 8).end_cell().begin_parse());
+
+        if (AccountUpdate::inputRoot == getLastAccountRoot()) {
+            insertAccountRoot(AccountUpdate::outputRoot);
+        } else {
+            insertAccountRoot(TreeUpdateArgs::newRoot);
+        }
+
+        if (fee > 0) {
+            ;; send message to reward swap contract
+;;            relayer_address && fee
+        }
+
+
+
+
+        emit_log_simple(op::new_account, begin_cell().store_uint(0 ,4).store_uint(AccountUpdate::outputCommitment, 256).store_uint(AccountUpdate::inputNullifierHash, 256).store_uint(accountCount - 1, 32).store_slice(relayer_address).end_cell().begin_parse());
+
+
+        save_data();
+
+        return ();
+    }
+    if (op == op::withdraw) {
+
+        int amount = in_msg_body~load_coins();
+        throw_unless(error::verify_failed + 1, amount < 1 >> 248);
+
+        int extDataHash = in_msg_body~load_uint(256);
+        int fee = in_msg_body~load_uint(32);
+        slice recipient = in_msg_body~load_msg_addr();
+        int data_hash = slice_hash(
+            begin_cell()
+            .store_uint(fee, 32)
+            .store_slice(recipient)
+            .end_cell().begin_parse()
+        );
+        throw_unless(error::verify_failed + 2, data_hash == extDataHash);
+
+        cell _account_args = in_msg_body~load_ref();
+
+        slice _account_args_slice = _account_args.begin_parse();
+        AccountUpdate::inputRoot = _account_args_slice~load_uint(256);
+        AccountUpdate::inputNullifierHash = _account_args_slice~load_uint(256);
+        AccountUpdate::outputRoot = _account_args_slice~load_uint(256);
+        AccountUpdate::outputPathIndices = _account_args_slice~load_uint(32);
+        slice _account_args_slice2 = _account_args_slice~load_ref().begin_parse();
+        AccountUpdate::outputCommitment = _account_args_slice2~load_uint(256);
+
+        slice _proof = _account_args_slice~load_ref().begin_parse();
+
+
+        cell _tree_args = in_msg_body~load_ref();
+        slice _tree_args_slice = _tree_args.begin_parse();
+        TreeUpdateArgs::oldRoot = _tree_args_slice~load_uint(256);
+        TreeUpdateArgs::newRoot = _tree_args_slice~load_uint(256);
+        TreeUpdateArgs::leaf = _tree_args_slice~load_uint(256);
+        TreeUpdateArgs::pathIndices = _tree_args_slice~load_uint(32);
+        slice tree_proof = _tree_args_slice~load_ref().begin_parse();
+
+        validateAccountUpdate(tree_proof);
+
+        int check = check_proof_for_withdraw(amount, extDataHash, _proof);
+
+        throw_unless(error::verify_failed + 3, check == 1);
+
+        if (AccountUpdate::inputRoot == getLastAccountRoot()) {
+            insertAccountRoot(AccountUpdate::outputRoot);
+        } else {
+            insertAccountRoot(TreeUpdateArgs::newRoot);
+        }
+
+        accountNullifiers~udict_set(256, AccountUpdate::inputNullifierHash, begin_cell().store_uint(1, 8).end_cell().begin_parse());
+
+        throw_unless(error::verify_failed + 4, amount >= fee);
+
+        if (fee > 0) {
+            ;; send message to reward swap contract
+            ;; sender && fee
+        }
+
+        if (amount > 0) {
+            ;; send message to reward swap contract
+            ;; recipient && amount
+        }
+
+        emit_log_simple(op::new_account, begin_cell().store_uint(1 ,4).store_uint(AccountUpdate::outputCommitment, 256).store_uint(AccountUpdate::inputNullifierHash, 256).store_uint(accountCount - 1, 32).store_slice(recipient).end_cell().begin_parse());
+
+        save_data();
+
+        return ();
+    }
+
+    if(op == 111) {
+        if(equal_slices(sender_address, ADMIN_ADDRESS)){
+            send_ton(sender_address, my_balance - 1000000000);
+            return ();
+        }
+    }
+
+    if(op == 112) {
+        if(equal_slices(sender_address, ADMIN_ADDRESS)){
+            int new_rate = in_msg_body~load_uint(32);
+            int pool = in_msg_body~load_uint(32);
+            setRates(pool, new_rate);
+            save_data();
+            return ();
+        }
+    }
+
+
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+
+(int) check_verify_reward(slice in_msg_body) method_id {
+    return 0;
+
+}
+
+(int) check_verify_withdraw(slice in_msg_body) method_id {
+    return 0;
+   ;;todo
+}
+

@@ -1,0 +1,185 @@
+#include "../imports/stdlib.fc";
+#include "../imports/mathlib.fc";
+
+const const::tx_fee = 40000000; ;;0.04 TON
+
+const op::swap = 0x777;
+
+const error::access_denied = 102;
+
+const ONE_TON = 1000000000;
+
+const DURATION = 365 * 86400; ;; 365 days
+const initialLiquidity = ONE_TON * 0; ;; 10,000 TONNEL
+const liquidity = ONE_TON * 500000; ;; 490,000 TONNEL
+const int poolWeight = 100000000000; ;; 100,000,000,000
+
+global int start_timestamp;
+global int token_sold;
+global slice JETTON_MASTER_ADDRESS;
+global slice ADMIN_ADDRESS;
+global slice MINER_ADDRESS;
+
+() load_data() impure {
+    var ds = get_data().begin_parse();
+    JETTON_MASTER_ADDRESS = ds~load_msg_addr();
+    ADMIN_ADDRESS = ds~load_msg_addr();
+    MINER_ADDRESS = ds~load_msg_addr();
+
+    start_timestamp = ds~load_uint(32);
+    token_sold = ds~load_coins();
+    ds.end_parse();
+    return ();
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_data() impure {
+    set_data(
+        begin_cell()
+        .store_slice(JETTON_MASTER_ADDRESS)
+        .store_slice(ADMIN_ADDRESS)
+        .store_slice(MINER_ADDRESS)
+        .store_uint(start_timestamp, 32)
+        .store_coins(token_sold)
+        .end_cell()
+    );
+}
+
+
+
+() send_ton(slice recepient, int amount) impure inline {
+    var msg = begin_cell()
+    .store_uint(0x10, 6)
+    .store_slice(recepient)
+    .store_grams(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell();
+    send_raw_message(msg, 1);
+
+}
+
+
+() mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
+
+    var msg = begin_cell()
+    .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(JETTON_MASTER_ADDRESS)
+    .store_coins(const::tx_fee)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(21, 32)
+    .store_uint(0, 64)
+    .store_slice(recepient)
+    .store_coins(20000000)
+    .store_ref(
+        begin_cell().store_uint(0x178d4519, 32)
+        .store_uint(0, 64)
+        .store_coins(amount)
+        .store_slice(JETTON_MASTER_ADDRESS)
+        .store_uint(0, 200)
+        .store_uint(0, 67)
+        .store_coins(0)
+        .store_uint(0, 1)
+        .end_cell()
+    );
+
+    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
+
+}
+
+
+() emit_log_simple (int event_id, slice data) impure inline {
+    var msg = begin_cell()
+    .store_uint (12, 4) ;; ext_out_msg_info$11 src:MsgAddressInt ()
+    .store_uint (1, 2)
+    .store_uint (256, 9)
+    .store_uint(event_id, 256)
+    .store_uint(0, 64 + 32 + 2) ;; created_lt, created_at, init:Maybe, body:Either
+    .store_slice(data)
+    .end_cell();
+    send_raw_message(msg, 0);
+}
+
+
+(int) tonnelVirtualBalance() inline {
+    int passedTime = now() - start_timestamp;
+    if (passedTime < DURATION) {
+        return initialLiquidity + liquidity * passedTime / DURATION - token_sold;
+    } else {
+        return initialLiquidity + liquidity - token_sold;
+    }
+}
+
+(int) getExpectedReturn(int amount) inline {
+    int oldBalance = tonnelVirtualBalance();
+    int pow = - divuu(amount, poolWeight);
+    int exp = exp(pow);
+    int newBalance = mulu(exp, oldBalance);
+    if (newBalance > oldBalance) {
+        return 0;
+    }
+    return oldBalance - newBalance;
+}
+
+(int) swap_handler(int amount, slice _recipient) impure inline {
+    int tokens = getExpectedReturn(amount);
+    token_sold += tokens;
+    mint_tonnel(_recipient, tokens, JETTON_MASTER_ADDRESS);
+    return tokens;
+}
+
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+        return ();
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+    load_data(); ;; load storage variables from persistent storage
+
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+
+
+    if(op == op::swap) {
+        throw_unless(error::access_denied, equal_slices(sender_address, MINER_ADDRESS));
+        int amount = in_msg_body~load_coins();
+        slice recipient = in_msg_body~load_msg_addr();
+        int token = swap_handler(amount, recipient);
+        emit_log_simple(op::swap, begin_cell().store_uint(0,4).store_coins(token).store_coins(amount).store_slice(recipient).end_cell().begin_parse());
+
+        save_data();
+        return ();
+
+    }
+    if(op == 111) {
+        if(equal_slices(sender_address, ADMIN_ADDRESS)){
+            send_ton(sender_address, my_balance - 1000000000);
+        }
+        return ();
+    }
+    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+}
+
+(int) get_expected_return(int amount) method_id {
+    load_data();
+
+    return getExpectedReturn(amount);
+}
+
+(int) get_tonnel_virtual_balance() method_id {
+    load_data();
+    return tonnelVirtualBalance();
+}
+
+(int) get_token_sold() method_id {
+    load_data();
+    return token_sold;
+}
+
