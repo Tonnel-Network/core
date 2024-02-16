@@ -139,19 +139,22 @@ const reward = async function (
     depositTree: any, withdrawalTree: any) {
   const newAmount = BigInt(account.amount) + BigInt(rate) * BigInt(note.withdrawBlock - note.depositBlock) - BigInt(fee)
   const newAccount = new Account({amount: newAmount})
+  console.log(note.commitment)
 
-  const depositItem = depositDataEvents.filter((x) => BigInt(x.hash) == note.commitment)
-  if (depositItem.length === 0) {
+  const depositItem = depositDataEvents.findIndex((x) => BigInt(x) == get_tonnel_tree_leaf(note.commitment, note.instance, note.depositBlock))
+  if (depositItem === -1) {
     throw new Error('The deposits tree does not contain such note commitment')
   }
-  const depositPath = depositTree.path(depositDataEvents.indexOf(depositItem[0]))
+  const depositPath = depositTree.path(depositItem)
+  console.log(depositPath)
 
 
-  const withdrawalItem = withdrawalDataEvents.filter((x) => x.hash === note.nullifierHash)
-  if (withdrawalItem.length === 0) {
+  const withdrawalItem = withdrawalDataEvents.findIndex((x) => BigInt(x) == get_tonnel_tree_leaf(note.nullifierHash, note.instance, note.withdrawBlock))
+  if (withdrawalItem === -1) {
     throw new Error('The withdrawals tree does not contain such note nullifier')
   }
-  const withdrawalPath = withdrawalTree.path(withdrawalDataEvents.indexOf(withdrawalItem[0]))
+  const withdrawalPath = withdrawalTree.path(withdrawalItem)
+  console.log(withdrawalPath)
   const accountTree = new MerkleTree(20, accountCommitments, {
     hashFunction: mimcHash2,
     zeroElement: '21663839004416932945382355908790599225266501822907911457504978515578255421292',
@@ -201,6 +204,8 @@ const reward = async function (
     withdrawalPathIndices: withdrawalPath.pathIndices,
     withdrawalPathElements: withdrawalPath.pathElements,
   }
+  console.log(account)
+  console.log(newAccount)
 
   const input_tree = {
     oldRoot: accountTreeUpdate.oldRoot,
@@ -458,6 +463,16 @@ export const getEncodedDataCell = (data: any[], events: Builder) => {
 }
 
 
+function get_tonnel_tree_leaf(commitment: string, pool: string, time: number) {
+  let new_pool
+      if (typeof pool === 'string') {
+        new_pool = get32BitsOfInstance(Address.parse(pool))
+    } else {
+        new_pool = pool
+      }
+  return mimcHash3(new_pool, commitment, time)
+}
+
 describe('TonnelTree', () => {
   let code: Cell;
   let codeMiner: Cell;
@@ -622,7 +637,7 @@ describe('TonnelTree', () => {
     res = await miner.sendSetRate(owner.getSender(),{
         value: toNano('0.05'),
         rate: BigInt(100),
-        pool: tonnel.address
+        pool: get32BitsOfInstance(tonnel.address)
         })
     expect(res.transactions).toHaveTransaction({
         from: owner.address,
@@ -744,6 +759,151 @@ describe('TonnelTree', () => {
 
   }
 
+  // it('should init Merkle and then deposit', async () => {
+  //   console.log('before-1', await tonnelTree.getBalance() / 1000000000n);
+  //   const events_deposits = require('../deposits_ALM.json')
+  //   const events_withdraws= require('../withdraws_ALM.json')
+  //
+  //
+  //   const tree = new MerkleTree(20, [], {
+  //     hashFunction: mimcHash2,
+  //     zeroElement: '21663839004416932945382355908790599225266501822907911457504978515578255421292',
+  //   });
+  //   let treeTONNEL_TREE_deposit = new MerkleTree(20,
+  //       [], {
+  //     hashFunction: mimcHash2,
+  //     zeroElement: '21663839004416932945382355908790599225266501822907911457504978515578255421292',
+  //
+  //   })
+  //   let treeTONNEL_TREE_withdraw = new MerkleTree(20, [], {
+  //     hashFunction: mimcHash2,
+  //     zeroElement: '21663839004416932945382355908790599225266501822907911457504978515578255421292',
+  //
+  //   })
+  //
+  //
+  //   const notes_str = [
+  //       'TON_250_328251890720143605146383961810128423283371255166889907937751743935937644937_347639444223459793133856721322029696938978984817493935117021592589663912861',
+  //       'TONNEL_1000_8389063951216780486926698450668021872395994775279689434371841173832320023_440782806369668489513152115286046192079019247005246785817949052179802749789',
+  //       'TONNEL_1000_184999245168107694107463132116772496920734649228140101608418189977007157128_435895393345740537470954350642412470646281735716668690890225387991512877723',
+  //       'TON_250_270173950786287312316496650643952462581721988166638350951539226457989644323_78575202831436466142778271506211484165936254902033224413706358121919190338'
+  //   ]
+  //   let notes = notes_str.map((note: string) => {
+  //     const secret = note.split('_')[2]
+  //       const nullifier = note.split('_')[3]
+  //       const commitment = mimcHash2(BigInt(secret), BigInt(nullifier))
+  //       const nullifierHash = mimcHash2(BigInt(nullifier),BigInt(nullifier))
+  //     return new Note({
+  //       amount: note.split('_')[1],
+  //       instance: Address.parse(events_deposits.find((e: any) => e.commitment === commitment).pool),
+  //       secret: BigInt(secret),
+  //       nullifier: BigInt(nullifier),
+  //       depositTime: events_deposits.find((e: any) => e.commitment === commitment).time,
+  //       withdrawTime: events_withdraws.find((e: any) => e.nullifier_hash === nullifierHash).time,
+  //
+  //     });
+  //   })
+  //   console.log(notes)
+  //
+  //
+  //   const zeroAccount = new Account()
+  //   const zeroAccount2 = new Account()
+  //
+  //   treeTONNEL_TREE_deposit.bulkInsert(events_deposits.map((e: any) => {
+  //     return get_tonnel_tree_leaf(e.commitment, e.pool, e.time)
+  //   }).slice(0, Math.floor(events_deposits.length / 32) * 32))
+  //   console.log(treeTONNEL_TREE_deposit.elements.length)
+  //   console.log(events_deposits.length)
+  //   treeTONNEL_TREE_withdraw.bulkInsert(events_withdraws.map((e: any) => {
+  //     return get_tonnel_tree_leaf(e.nullifier_hash, e.pool, e.time)
+  //   }).slice(0, Math.floor(events_withdraws.length / 32) * 32))
+  //   console.log(events_withdraws.length)
+  //   console.log(treeTONNEL_TREE_withdraw.elements.length)
+  //   console.log(treeTONNEL_TREE_withdraw.root)
+  //   console.log(treeTONNEL_TREE_deposit.root)
+  //   const { args, account } = await reward(
+  //       zeroAccount, notes[0], 0, 100, [], treeTONNEL_TREE_deposit.elements,
+  //       treeTONNEL_TREE_withdraw.elements, treeTONNEL_TREE_deposit, treeTONNEL_TREE_withdraw
+  //   )
+  //
+  //
+  //   await miner.sendSetRate(owner.getSender(),{
+  //     value: toNano('0.05'),
+  //     rate: BigInt(100),
+  //     pool: notes[0].instance
+  //   })
+  //
+  //   console.log('before-tonnel tree', await tonnelTree.getBalance());
+  //   console.log('before-miner', await miner.getBalance());
+  //   const res = await tonnelTree.sendRewardRequest(owner.getSender(), {
+  //       value: toNano('0.24'),
+  //       reward_payload: beginCell()
+  //           .storeUint(BigInt(args.depositRoot), 256).storeUint(BigInt(args.withdrawalRoot), 256)
+  //           .storeRef(
+  //               beginCell().storeUint(100, 32).
+  //               storeCoins(0)
+  //                   .storeUint(notes[0].instance, 32)
+  //                   .storeUint(BigInt(args.rewardNullifier), 256)
+  //                   .storeAddress(owner.address)
+  //                   .storeUint(BigInt(args.account.inputRoot), 256)
+  //                   .storeRef(
+  //                       beginCell().storeUint(BigInt(args.account.inputNullifierHash), 256)
+  //                           .storeUint(BigInt(args.account.outputRoot), 256)
+  //                           .storeUint(BigInt(args.account.outputPathIndices), 32)
+  //                           .storeUint(BigInt(args.account.outputCommitment), 256)
+  //                           .endCell()
+  //                   )
+  //                   .storeRef(
+  //                       args.proof
+  //                   )
+  //                   .endCell()
+  //           )
+  //           .storeRef(
+  //               beginCell()
+  //                   .storeUint(BigInt(args.account.inputRoot), 256)
+  //                   .storeUint(BigInt(args.account.outputRoot), 256)
+  //                   .storeUint(BigInt(args.account.outputCommitment), 256)
+  //                   .storeUint(BigInt(args.account.outputPathIndices), 32)
+  //                   .storeRef(args.proofTree)
+  //                   .endCell()
+  //           )
+  //   })
+  //   expect(res.transactions).toHaveTransaction({
+  //       from: owner.address,
+  //       to: tonnelTree.address,
+  //       success: true,
+  //   });
+  //
+  //   expect(res.transactions).toHaveTransaction({
+  //     from: tonnelTree.address,
+  //     to: miner.address,
+  //     success: true,
+  //   });
+  //
+  //   console.log('after-tonnel tree', await tonnelTree.getBalance());
+  //   console.log('after-miner', await miner.getBalance());
+  //
+  //   // expect(res.transactions).toHaveTransaction({
+  //   //   from: miner.address,
+  //   //   to: apswap.address,
+  //   //   success: true,
+  //   // });
+  //
+  //   // expect(res.transactions).toHaveTransaction({
+  //   //   from: apswap.address,
+  //   //   to: tonnelJettonMaster.address,
+  //   //   success: true,
+  //   // });
+  //
+  //   // expect(res.transactions).toHaveTransaction({
+  //   //   from: tonnelJettonMaster.address,
+  //   //   success: true,
+  //   // });
+  //
+  //
+  //
+  //
+  // }, 50000000);
 
 
   it('should init Merkle and then deposit', async () => {
@@ -814,7 +974,7 @@ describe('TonnelTree', () => {
     console.log('before-1', await tonnelTree.getBalance());
 
     const updateResult = await tonnelTree.sendUpdateDepositRoot(owner.getSender(), {
-        value: toNano('0.22'),
+        value: toNano('0.3'),
       a: a,
       b: b,
       c: c,
@@ -849,6 +1009,16 @@ describe('TonnelTree', () => {
         recipient: owner.address,
         fee: BigInt(10),
         });
+      expect(tx.transactions).toHaveTransaction({
+        from: owner.address,
+        to: tonnel.address,
+        success: true,
+      });
+        expect(tx.transactions).toHaveTransaction({
+            from: tonnel.address,
+            to: tonnelTree.address,
+            success: true,
+        });
 
       events[i].timestampWithdraw = tx.transactions[1].now
       events[i].note.withdrawBlock = tx.transactions[1].now
@@ -880,7 +1050,7 @@ describe('TonnelTree', () => {
         }
       }
       const updateResult = await tonnelTree.sendUpdateDepositRoot(owner.getSender(), {
-        value: toNano('0.22'),
+        value: toNano('0.3'),
         a: a,
         b: b,
         c: c,
@@ -908,40 +1078,15 @@ describe('TonnelTree', () => {
 
 
     const { args, account } = await reward(
-        zeroAccount, events[0].note, 0, 100, [], events.map(
-            (e) => {
-              return {
-                hash: e.note.commitment
-              }
-            }
-        ),
-        events.map(
-            (e) => {
-              return {
-                hash: e.note.nullifierHash
-              }
-            }
-        ), treeTONNEL_TREE_deposit, treeTONNEL_TREE_withdraw
+        zeroAccount, events[0].note, 0, 100, [],treeTONNEL_TREE_deposit.elements ,
+        treeTONNEL_TREE_withdraw.elements, treeTONNEL_TREE_deposit, treeTONNEL_TREE_withdraw
 
     )
 
 
     const { args: args3, account: account_2 } = await reward(
-        zeroAccount2, events[1].note, 0, 100, [], events.map(
-            (e) => {
-              return {
-                hash: e.note.commitment
-              }
-            }
-        ),
-        events.map(
-            (e) => {
-              return {
-                hash: e.note.nullifierHash
-              }
-            }
-        ), treeTONNEL_TREE_deposit, treeTONNEL_TREE_withdraw
-
+        zeroAccount2, events[1].note, 0, 100, [], treeTONNEL_TREE_deposit.elements,
+        treeTONNEL_TREE_withdraw.elements, treeTONNEL_TREE_deposit, treeTONNEL_TREE_withdraw
     )
     console.log('before-tonnel tree', await tonnelTree.getBalance());
     console.log('before-miner', await miner.getBalance());

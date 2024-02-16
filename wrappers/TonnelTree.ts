@@ -22,20 +22,25 @@ export function tonnelConfigToCell(config: TonnelTreeConfig): Cell {
     return beginCell()
       .storeRef(
           beginCell()
-              .storeUint(BigInt('43859932230369129483580312926473830336086498799745261185663267638134570341235'), 256)
+              // .storeUint(BigInt('43859932230369129483580312926473830336086498799745261185663267638134570341235'), 256)
+              .storeUint(BigInt('25416488001500592750831851833222150514626956728948310222978720675196770330485'), 256)
               .storeUint(BigInt('0'), 256)
               .storeUint(0, 32)
               .storeUint(0, 32)
               .storeDict(Dictionary.empty(Dictionary.Keys.BigUint(32), CellRef))
+              .storeDict(Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef))
               .endCell()
       )
         .storeRef(
             beginCell()
-                .storeUint(BigInt('43859932230369129483580312926473830336086498799745261185663267638134570341235'), 256)
+                // .storeUint(BigInt('43859932230369129483580312926473830336086498799745261185663267638134570341235'), 256)
+                .storeUint(BigInt('22614051121781559972052913768501660456524670246973068400452260998473472130300'), 256)
                 .storeUint(BigInt('0'), 256)
                 .storeUint(0, 32)
                 .storeUint(0, 32)
                 .storeDict(Dictionary.empty(Dictionary.Keys.BigUint(32), CellRef))
+                .storeDict(Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef))
+
                 .endCell()
         )
     .storeRef(
@@ -242,11 +247,11 @@ export class TonnelTree implements Contract {
                     .endCell()
             )
             .endCell()
-        // const check = await this.getCheckVerify(provider, inputCell);
-        // console.log(check)
-        // if (check !== 1) {
-        //     throw new Error(`Withdraw check failed: ${check}`);
-        // }
+        const check = await this.getCheckVerify(provider, inputCell, (opts.opcode ?? Opcodes.update_deposit_root) === Opcodes.update_deposit_root);
+        console.log(check)
+        if (check !== 1) {
+            throw new Error(`Withdraw check failed: ${check}`);
+        }
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,

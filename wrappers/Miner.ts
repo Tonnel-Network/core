@@ -133,7 +133,7 @@ export class Miner implements Contract {
 
     async sendSetRate(provider: ContractProvider, via: Sender, opts: {
         value: bigint;
-        pool: Address;
+        pool: number;
         rate: bigint;
 
     }) {
@@ -143,10 +143,12 @@ export class Miner implements Contract {
             body: beginCell().storeUint(112, 32)
                 .storeUint(0, 64)
                 .storeUint(opts.rate, 32)
-                .storeUint(get32BitsOfInstance(opts.pool), 32)
+                .storeUint(opts.pool, 32)
                 .endCell(),
         });
     }
+
+
     async getBalance(provider: ContractProvider) {
         const result = await provider.getState();
         return result.balance;

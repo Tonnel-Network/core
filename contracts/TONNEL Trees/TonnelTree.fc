@@ -55,25 +55,27 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
     );
 }
 
-(cell) pack_tree_data(int currentRoot, int previousRoot, cell history, int length, int lastProcessedLeaf) impure {
+(cell) pack_tree_data(int currentRoot, int previousRoot, cell history, int length, int lastProcessedLeaf, cell history_reverse_cache) impure {
     return begin_cell()
     .store_uint(currentRoot, 256)
     .store_uint(previousRoot, 256)
     .store_uint(length, 32)
     .store_uint(lastProcessedLeaf, 32)
     .store_dict(history)
+    .store_dict(history_reverse_cache)
     .end_cell();
 }
 
-(int, int, cell, int, int) parse_tree_data(cell data) impure {
+(int, int, cell, int, int, cell) parse_tree_data(cell data) impure {
     slice data_slice = data.begin_parse();
     int currentRoot = data_slice~load_uint(256);
     int previousRoot = data_slice~load_uint(256);
     int length = data_slice~load_uint(32);
     int lastProcessedLeaf = data_slice~load_uint(32);
     cell history = data_slice~load_dict();
+    cell history_reverse_cache = data_slice~load_dict();
 
-    return (currentRoot, previousRoot, history, length, lastProcessedLeaf);
+    return (currentRoot, previousRoot, history, length, lastProcessedLeaf, history_reverse_cache);
 }
 
 (slice, slice, slice, cell) parse_governance(cell data) impure {
@@ -131,11 +133,12 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
     }
     return 0;
 }
-(int, cell) get_sha256(slice events, cell history, int offset, slice header) impure {
+(int, cell, cell) get_sha256(slice events, cell history, cell history_cache, int offset, slice header) impure {
     tuple sliceData = empty_tuple();
     int count = 0;
     while (events.slice_refs() > 0) {
         int many = events.slice_refs();
+
         repeat (many - 1) {
             cell ref = events~load_ref();
             slice event_slice = ref.begin_parse();
@@ -154,8 +157,9 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
                     int hash_result = cell_hash(begin_cell().store_uint(instance, 32).store_uint(hash, 256).store_uint(timestamp, 32).end_cell());
                     (slice res, int found) = history~udict_delete_get?(32, offset + count);
 
-
                     throw_unless(error::verify_failed + 200 + count, hash_result == res~load_uint(256));
+
+                    history_cache~udict_delete_get?(256, hash_result);
                     count += 1;
                 }
             }
@@ -165,7 +169,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         events = events~load_ref().begin_parse();
 
     }
-    return (hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)), history);
+    return (hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)), history, history_cache);
 
 }
 
@@ -242,8 +246,8 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
 
     (cell depositData, cell withdrawData, cell governance) = load_data(); ;; here we populate the storage variables
 
-    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
-    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
+    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf, cell deposits_cache) = parse_tree_data(depositData);
+    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf, cell withdraws_cache) = parse_tree_data(withdrawData);
     (slice admin, slice miner, slice TONNEL_JETTON_MASTER, cell pools) = parse_governance(governance);
 
 
@@ -259,6 +263,12 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
 
         int _depositsLength = depositsLength;
         int hash_leaf = cell_hash(begin_cell().store_uint(commitment_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now, 32).end_cell());
+
+        (_, int found) = deposits_cache.udict_get?(256, hash_leaf);
+        throw_if(error::verify_failed_double_spend, found);
+
+
+        deposits_cache~udict_set(256, hash_leaf, begin_cell().store_uint(1, 1).end_cell().begin_parse());
         deposits~udict_set(32, _depositsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
 
 
@@ -267,7 +277,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         depositsLength = _depositsLength + 1;
 
         save_data(
-                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, lastProcessedDepositLeaf),
+                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, lastProcessedDepositLeaf, deposits_cache),
                 withdrawData,
                 governance
             );
@@ -284,6 +294,10 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         int _withdrawsLength = withdrawsLength;
         int hash_leaf = cell_hash(begin_cell().store_uint(nullifier_hash_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now, 32).end_cell());
 
+        (_, int found) = withdraws_cache.udict_get?(256, hash_leaf);
+        throw_if(error::verify_failed_double_spend, found);
+
+        withdraws_cache~udict_set(256, hash_leaf, begin_cell().store_uint(1, 1).end_cell().begin_parse());
         withdraws~udict_set(32, _withdrawsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
 
         emit_log_simple(op::register_withdraw, begin_cell().store_uint(1 ,8).store_slice(sender_address).store_uint(nullifier_hash_value, 256).store_uint(now, 32).store_uint(_withdrawsLength, 32).end_cell().begin_parse());
@@ -292,7 +306,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
 
         save_data(
                 depositData,
-                pack_tree_data(withdrawRoot, previousWithdrawRoot, withdraws, withdrawsLength, lastProcessedWithdrawLeaf),
+                pack_tree_data(withdrawRoot, previousWithdrawRoot, withdraws, withdrawsLength, lastProcessedWithdrawLeaf, withdraws_cache),
                 governance
             );
 
@@ -318,7 +332,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         throw_unless(error::verify_failed_input + 100, _currentRoot == depositRoot);
         throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
         slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
-        (int hash, deposits) = get_sha256(ref.begin_parse(), deposits, offset, header_slice);
+        (int hash, deposits, deposits_cache) = get_sha256(ref.begin_parse(), deposits,deposits_cache, offset, header_slice);
         throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
         throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
         int check = check_proof_for_tree(_argsHash, insert_proof_slice);
@@ -329,12 +343,11 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         depositRoot = _newRoot;
         lastProcessedDepositLeaf += CHUNK_SIZE;
 
-        ;; todo mint some TONNEL as a reward for the updater
         mint_tonnel(sender_address, ONE_TON * 10, TONNEL_JETTON_MASTER);
         emit_log_simple(op::update_deposit_root, begin_cell().store_uint(2 ,8).store_uint(offset, 32).end_cell().begin_parse());
 
         save_data(
-                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, offset),
+                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, offset, deposits_cache),
                 withdrawData,
                 governance
             );
@@ -359,7 +372,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
         slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
 
-        (int hash, withdraws) = get_sha256(ref.begin_parse(), withdraws, offset, header_slice);
+        (int hash, withdraws, withdraws_cache) = get_sha256(ref.begin_parse(), withdraws, withdraws_cache, offset, header_slice);
         throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
         throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
 
@@ -376,7 +389,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
 
         save_data(
                 depositData,
-                pack_tree_data(_newRoot, _currentRoot, withdraws, withdrawsLength, offset),
+                pack_tree_data(_newRoot, _currentRoot, withdraws, withdrawsLength, offset, withdraws_cache),
                 governance
             );
         return ();
@@ -390,8 +403,6 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
 
         throw_unless(error::wrong_reward_deposit_root, (_depositRoot == depositRoot) | (_depositRoot == previousDepositRoot));
         throw_unless(error::wrong_reward_withdraw_root, (_withdrawRoot == withdrawRoot) | (_withdrawRoot == previousWithdrawRoot));
-        ~dump(tx_fee_send_reward_miner);
-        ~dump(msg_value);
 
         send_message_to_anon_miner(miner,
             begin_cell()
@@ -448,28 +459,31 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
     in_msg_body~load_uint(32 + 64);
     (cell depositData, _, _) = load_data(); ;; here we populate the storage variables
 
-    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
-
+    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf, cell deposits_cache) = parse_tree_data(depositData);
     int offset = lastProcessedDepositLeaf;
 
     cell args = in_msg_body~load_ref();
     slice args_slice = args.begin_parse();
     int _argsHash = args_slice~load_uint(256);
     int _currentRoot = args_slice~load_uint(256);
+
     int _newRoot = args_slice~load_uint(256);
     int _pathIndices = args_slice~load_uint(32);
+
     cell _insertProof = args_slice~load_ref();
     slice insert_proof_slice = _insertProof.begin_parse();
 
-    cell ref = in_msg_body~load_ref();
+    cell ref = args_slice~load_ref();
+
     throw_unless(error::verify_failed_input + 100, _currentRoot == depositRoot);
     throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
     slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
-
-    (int hash, deposits) = get_sha256(ref.begin_parse(), deposits, offset, header_slice);
+    (int hash, _, _) = get_sha256(ref.begin_parse(), deposits, deposits_cache,  offset, header_slice);
     throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
     throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
     int check = check_proof_for_tree(_argsHash, insert_proof_slice);
+
+
 
     ifnot (check) {
         return 0;
@@ -481,10 +495,8 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
     in_msg_body~load_uint(32 + 64);
     (_, cell withdrawData, _) = load_data(); ;; here we populate the storage variables
 
-    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
-
+    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf, cell withdraws_cache) = parse_tree_data(withdrawData);
     int offset = lastProcessedWithdrawLeaf;
-
     cell args = in_msg_body~load_ref();
     slice args_slice = args.begin_parse();
     int _argsHash = args_slice~load_uint(256);
@@ -493,13 +505,12 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
     int _pathIndices = args_slice~load_uint(32);
     cell _insertProof = args_slice~load_ref();
     slice insert_proof_slice = _insertProof.begin_parse();
-    cell ref = in_msg_body~load_ref();
+    cell ref = args_slice~load_ref();
 
     throw_unless(error::verify_failed_input + 100, _currentRoot == withdrawRoot);
     throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
     slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
-
-    (int hash, withdraws) = get_sha256(ref.begin_parse(), withdraws, offset, header_slice);
+    (int hash, _, _) = get_sha256(ref.begin_parse(), withdraws, withdraws_cache, offset, header_slice);
     throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
     throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
     int check = check_proof_for_tree(_argsHash, insert_proof_slice);
