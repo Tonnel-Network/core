@@ -5,10 +5,32 @@ import {compile} from '@ton-community/blueprint';
 import {JettonMinter} from "../wrappers/JettonMinter";
 import {JettonWallet} from "../wrappers/JettonWallet";
 import {APSwap} from "../wrappers/APSwap";
+import {Miner} from "../wrappers/Miner";
+import MerkleTree from "fixed-merkle-tree";
+import {mimcHash2} from "../utils/merkleTree";
+const Note = require('../utils/note')
+const Account = require('../utils/account')
 
 
+const rates: {
+    [key: string]: number
+    } = {}
+/**
+ * Generates proof and args to claim AP (anonymity points) for a note
+ * @param {Account} account The account the AP will be added to
+ * @param {Note} note The target note
+ * @param {String} publicKey ETH public key for the Account encryption
+ * @param {Number} fee Fee for the relayer
+ * @param {String} relayer Relayer address
+ * @param {Number} rate How many AP is generated for the note in block time
+ * @param {String[]} accountCommitments An array of account commitments from miner contract
+ * @param {String[]} depositDataEvents An array of account commitments from miner contract
+ * @param {{instance: String, hash: String, block: Number, index: Number}[]} depositDataEvents An array of deposit objects from tornadoTrees contract. hash = commitment
+ * @param {{instance: String, hash: String, block: Number, index: Number}[]} withdrawalDataEvents An array of withdrawal objects from tornadoTrees contract. hash = nullifierHash
+ */
 
-describe('APSwap', () => {
+
+describe('Miner', () => {
   let code: Cell;
   let codeWallet: Cell;
   let codeMaster: Cell;
@@ -25,10 +47,9 @@ describe('APSwap', () => {
   });
 
   let blockchain: Blockchain;
-  let apswap: SandboxContract<APSwap>;
+  let miner: SandboxContract<Miner>;
   let owner: SandboxContract<TreasuryContract>;
   let jettonMaster: SandboxContract<JettonMinter>;
-  let start_time = 0;
 
   beforeEach(async () => {
     blockchain = await Blockchain.create();
@@ -49,59 +70,93 @@ describe('APSwap', () => {
     });
 
 
-    apswap = blockchain.openContract(
-      APSwap.createFromConfig(
+    miner = blockchain.openContract(
+      Miner.createFromConfig(
         {
           JettonMasterAddress: jettonMaster.address,
             ADMIN_ADDRESS: owner.address,
-            MINER_ADDRESS: owner.address,
-            start: deployJettonResult.transactions[0].now
+            REWARD_SWAP_ADDRESS: owner.address,
+            TONNEL_TREE_ADDRESS: owner.address
         },
         code
       )
     );
-    start_time = deployJettonResult.transactions[0].now;
 
 
-    const deployResult = await apswap.sendDeploy(deployer.getSender(), toNano('0.05'));
+    const deployResult = await miner.sendDeploy(deployer.getSender(), toNano('0.05'));
 
     expect(deployResult.transactions).toHaveTransaction({
       from: deployer.address,
-      to: apswap.address,
+      to: miner.address,
       deploy: true,
       success: true,
     });
     await jettonMaster.sendMintAccess(owner.getSender(),{
       value: toNano('0.02'),
       queryId: 0,
-      mintAccess: apswap.address
+      mintAccess: miner.address
     })
 
   });
+
   it('should deploy and check', async () => {
-    let ONE_DAY = 86400;
-    blockchain.now = start_time + ONE_DAY * 364;
-    // console.log(await apswap.getTONNELVirtualBalance());
-    console.log(await apswap.getExpectedReturn(BigInt(100 * 86400)));
-    console.log(await apswap.getExpectedReturn(BigInt(10 * 86400)));
-  for (let i = 0; i < 100; i++) {
-    const resSwap = await apswap.sendSwap(owner.getSender(),
-        toNano('0.1'),
-        BigInt(100 * 86400),
-        owner.address
-    );
-    expect(resSwap.transactions).toHaveTransaction({
-      from: owner.address,
-      to: apswap.address,
-      success: true,
+    const note1 = new Note({
+      amount: 10,
+      depositTime: 5,
+      withdrawTime: 10,
+      instance: miner.address,
     });
-    console.log(await apswap.getTokenSold());
-  }
+    const note2 = new Note({
+      amount: 10,
+      depositTime: 5,
+      withdrawTime: 20,
+      instance: miner.address,
+    });
+    const note3 = new Note({
+      amount: 10,
+      depositTime: 5,
+      withdrawTime: 30,
+      instance: miner.address,
+    });
+    const note = note1
+    const notes = [note1, note2, note3]
+
+    const zeroAccount = new Account()
+    const accountCount = await miner.getAccountCount()
+    expect(zeroAccount.amount).toBe(0)
+    expect(accountCount).toBe(0)
+    const rewardNullifierBefore = await miner.getRewardNullifier(note.rewardNullifier)
+    expect(rewardNullifierBefore).toBe(false)
+    const accountNullifierBefore = await miner.getaccountNullifiers(zeroAccount.nullifier)
+    expect(accountNullifierBefore).toBe(false)
 
 
-    console.log(await apswap.getExpectedReturn(BigInt(100 * 86400)));
-    console.log(await apswap.getExpectedReturn(BigInt(10 * 86400)));
 
+
+
+    //   let ONE_DAY = 86400;
+  //   blockchain.now = start_time + ONE_DAY * 364;
+  //   // console.log(await apswap.getTONNELVirtualBalance());
+  //   console.log(await miner.getExpectedReturn(BigInt(100 * 86400)));
+  //   console.log(await apswap.getExpectedReturn(BigInt(10 * 86400)));
+  // for (let i = 0; i < 100; i++) {
+  //   const resSwap = await apswap.sendSwap(owner.getSender(),
+  //       toNano('0.1'),
+  //       BigInt(100 * 86400),
+  //       owner.address
+  //   );
+  //   expect(resSwap.transactions).toHaveTransaction({
+  //     from: owner.address,
+  //     to: apswap.address,
+  //     success: true,
+  //   });
+  //   console.log(await apswap.getTokenSold());
+  // }
+  //
+  //
+  //   console.log(await apswap.getExpectedReturn(BigInt(100 * 86400)));
+  //   console.log(await apswap.getExpectedReturn(BigInt(10 * 86400)));
+  //
   });
 
 

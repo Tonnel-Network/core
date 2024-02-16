@@ -4,6 +4,7 @@
 
 const ONE_TON = 1000000000;
 const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
+
 const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 const FIELD_SIZE = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
 
@@ -11,6 +12,9 @@ const op::register_deposit = 0x888;
 const op::register_withdraw = 0x777;
 const op::update_deposit_root = 0x666;
 const op::update_withdraw_root = 0x555;
+const op::add_pool = 0x444;
+const op::set_miner = 0x222;
+const op::reward = 0x333;
 
 const error::access_denied = 102;
 const error::fund = 103;
@@ -20,11 +24,16 @@ const error::verify_failed_root = 106;
 const error::verify_failed_double_spend = 107;
 const error::verify_failed_input = 108;
 const error::empty_stuck = 109;
+const error::wrong_reward_withdraw_root = 110;
+const error::wrong_reward_deposit_root = 111;
 
 
 
 const CHUNK_TREE_HEIGHT = 5;
 const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
+global int tx_fee_send_reward_miner; ;; 0.4 TON
+
+
 
 (cell, cell, cell) load_data() impure {
     var ds = get_data().begin_parse();
@@ -67,16 +76,60 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
     return (currentRoot, previousRoot, history, length, lastProcessedLeaf);
 }
 
-(slice, cell) parse_governance(cell data) impure {
+(slice, slice, slice, cell) parse_governance(cell data) impure {
     slice data_slice = data.begin_parse();
     slice admin = data_slice~load_msg_addr();
+    slice miner = data_slice~load_msg_addr();
+    slice TONNEL_JETTON_MASTER = data_slice~load_msg_addr();
+    tx_fee_send_reward_miner = data_slice~load_coins();
     cell pools = data_slice~load_dict();
-    return (admin, pools);
+    return (admin, miner, TONNEL_JETTON_MASTER, pools);
+}
+
+
+() mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
+
+    var msg = begin_cell()
+    .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(JETTON_MASTER_ADDRESS)
+    .store_coins(const::tx_fee_send_jetton)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(21, 32)
+    .store_uint(0, 64)
+    .store_slice(recepient)
+    .store_coins(20000000)
+    .store_ref(
+        begin_cell().store_uint(0x178d4519, 32)
+        .store_uint(0, 64)
+        .store_coins(amount)
+        .store_slice(JETTON_MASTER_ADDRESS)
+        .store_uint(0, 200)
+        .store_uint(0, 67)
+        .store_coins(0)
+        .store_uint(0, 1)
+        .end_cell()
+    );
+
+    send_raw_message(msg.end_cell(), 1); ;; paying fees, revert on errors
+
+}
+() send_ton(slice recepient, int amount) impure inline {
+    var msg = begin_cell()
+    .store_uint(0x10, 6)
+    .store_slice(recepient)
+    .store_grams(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell();
+    send_raw_message(msg, 1);
+
 }
 
 (int) valid_pool(slice pool, cell pools) impure {
-;;    (_, int found) = pools.udict_get?(256, slice_hash(pool));
-    return 1;
+    (_, int found) = pools.udict_get?(256, slice_hash(pool));
+    if (found) {
+        return 1;
+    }
+    return 0;
 }
 (int, cell) get_sha256(slice events, cell history, int offset, slice header) impure {
     tuple sliceData = empty_tuple();
@@ -99,11 +152,6 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
                     int hash = event_slice2~load_uint(256);
                     int timestamp = event_slice2~load_uint(32);
                     int hash_result = cell_hash(begin_cell().store_uint(instance, 32).store_uint(hash, 256).store_uint(timestamp, 32).end_cell());
-;;                    ~dump(instance);
-;;                    ~dump(hash);
-;;                    ~dump(timestamp);
-;;                    ~dump(hash_result);
-;;                    ~dump(count);
                     (slice res, int found) = history.udict_get?(32, offset + count);
 
 
@@ -117,10 +165,18 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         events = events~load_ref().begin_parse();
 
     }
-;;    ~dump(tuples::tlen(sliceData));
-    ~dump(hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)) % FIELD_SIZE);
     return (hash_sha256_22(header,sliceData.at(0), sliceData.at(1), sliceData.at(2), sliceData.at(3), sliceData.at(4), sliceData.at(5), sliceData.at(6), sliceData.at(7), sliceData.at(8), sliceData.at(9), sliceData.at(10)), history);
 
+}
+
+() send_message_to_anon_miner(slice recepient, cell payload, int amount) impure inline {
+    var msg = begin_cell()
+    .store_uint(0x10, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+    .store_slice(recepient)
+    .store_coins(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_slice(payload.begin_parse());
+    send_raw_message(msg.end_cell(), 2); ;; paying fees, revert on errors
 }
 
 () emit_log_simple (int event_id, slice data) impure inline {
@@ -137,13 +193,12 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
 
 (int) check_proof_for_tree(int argshash, slice insert_proof) impure inline {
 
-    slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
-    slice IC0 =  begin_cell().store_uint(149463881306625, 48).store_uint(144872300902732, 48).store_uint(174187054867017, 48).store_uint(116683277427982, 48).store_uint(265686967952922, 48).store_uint(252921879845267, 48).store_uint(114778485693866, 48).store_uint(5303972209837, 48).end_cell().begin_parse();
-    slice IC1 =  begin_cell().store_uint(163889391969450, 48).store_uint(246380033874386, 48).store_uint(73095240576401, 48).store_uint(93872595764167, 48).store_uint(209061551175750, 48).store_uint(145133340025488, 48).store_uint(118965754737971, 48).store_uint(114963008012871, 48).end_cell().begin_parse();
-    slice beta2 =  begin_cell().store_uint(45268298785829999156800790826, 96).store_uint(49616257531946340397706624184, 96).store_uint(21860288103068343353898458482, 96).store_uint(44130212597109342573800170705, 96).store_uint(4047260717587677040649332350, 96).store_uint(38438004468883114874440114862, 96).store_uint(37382830912273952379501564462, 96).store_uint(68660724947650442889836600213, 96).end_cell().begin_parse();
+    slice alf1 =  begin_cell().store_uint(143404533930291, 48).store_uint(207982653173852, 48).store_uint(143994167021018, 48).store_uint(183183193512237, 48).store_uint(218883861259691, 48).store_uint(24477302084812, 48).store_uint(111581257904896, 48).store_uint(229364809865309, 48).end_cell().begin_parse();
+    slice IC0 =  begin_cell().store_uint(182139001167801, 48).store_uint(177979105450701, 48).store_uint(234595087971590, 48).store_uint(36637689683337, 48).store_uint(144047623952995, 48).store_uint(228679786929952, 48).store_uint(196296882822541, 48).store_uint(180462067407174, 48).end_cell().begin_parse();
+    slice IC1 =  begin_cell().store_uint(141005324122516, 48).store_uint(223545908130882, 48).store_uint(259209527085472, 48).store_uint(191793941268235, 48).store_uint(195150179701149, 48).store_uint(89683324685123, 48).store_uint(196541623069365, 48).store_uint(14596967629922, 48).end_cell().begin_parse();
+    slice beta2 =  begin_cell().store_uint(51455172208514111759335776208, 96).store_uint(42237841563648763493155414165, 96).store_uint(32391223266546376642761218771, 96).store_uint(75502340968307103474821568870, 96).store_uint(7581245322137299464452728151, 96).store_uint(20913221498694123795643744754, 96).store_uint(54032637980817916783350022375, 96).store_uint(35290279107342357737117761567, 96).end_cell().begin_parse();
     slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
-    slice delta2 =  begin_cell().store_uint(57404885677640579730243374799, 96).store_uint(74640312393593044018703206431, 96).store_uint(72169551985828096175287641873, 96).store_uint(73191377323043092450051400364, 96).store_uint(2166075833178725585951546652, 96).store_uint(27864811610718394234613231021, 96).store_uint(5303551526686084678103393224, 96).store_uint(16202961803211306031003898654, 96).end_cell().begin_parse();
-
+    slice delta2 =  begin_cell().store_uint(40747964726529935666202287485, 96).store_uint(30949907497352333237125517913, 96).store_uint(33605899246775180871640665446, 96).store_uint(7986599711462228703794020298, 96).store_uint(6918691004056572005087487959, 96).store_uint(14227789097824808627818182262, 96).store_uint(21753433383368458807806669322, 96).store_uint(44026580465824729527305210798, 96).end_cell().begin_parse();
     cell A_cell = insert_proof~load_ref();
     cell B_cell = insert_proof~load_ref();
     cell C_cell = insert_proof~load_ref();
@@ -184,32 +239,30 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         return ();
     }
     slice sender_address = cs~load_msg_addr();
-    ~dump(11111);
 
     (cell depositData, cell withdrawData, cell governance) = load_data(); ;; here we populate the storage variables
 
     (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
     (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
-    (slice admin, cell pools) = parse_governance(governance);
+    (slice admin, slice miner, slice TONNEL_JETTON_MASTER, cell pools) = parse_governance(governance);
 
 
     int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
     int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
-;;    ~dump(op);
     if (op == op::register_deposit) {
         throw_unless(error::access_denied, valid_pool(sender_address, pools));
         cell commitment = in_msg_body~load_ref();
         slice commitment_slice = commitment.begin_parse();
         int commitment_value = commitment_slice~load_uint(256);
+        int now = commitment_slice~load_uint(32);
 
 
         int _depositsLength = depositsLength;
-        int hash_leaf = cell_hash(begin_cell().store_uint(commitment_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now(), 32).end_cell());
-
+        int hash_leaf = cell_hash(begin_cell().store_uint(commitment_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now, 32).end_cell());
         deposits~udict_set(32, _depositsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
 
 
-        emit_log_simple(op::register_deposit, begin_cell().store_uint(0 ,8).store_slice(sender_address).store_uint(commitment_value, 256).store_uint(now(), 32).store_uint(_depositsLength, 32).end_cell().begin_parse());
+        emit_log_simple(op::register_deposit, begin_cell().store_uint(0 ,8).store_slice(sender_address).store_uint(commitment_value, 256).store_uint(now, 32).store_uint(_depositsLength, 32).end_cell().begin_parse());
 
         depositsLength = _depositsLength + 1;
 
@@ -218,7 +271,6 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
                 withdrawData,
                 governance
             );
-        ~dump(depositsLength);
 
         return ();
     }
@@ -227,13 +279,14 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         cell nullifier_hash = in_msg_body~load_ref();
         slice nullifier_hash_slice = nullifier_hash.begin_parse();
         int nullifier_hash_value = nullifier_hash_slice~load_uint(256);
+        int now = nullifier_hash_slice~load_uint(32);
 
         int _withdrawsLength = withdrawsLength;
-        int hash_leaf = cell_hash(begin_cell().store_uint(nullifier_hash_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now(), 32).end_cell());
+        int hash_leaf = cell_hash(begin_cell().store_uint(nullifier_hash_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now, 32).end_cell());
 
         withdraws~udict_set(32, _withdrawsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
 
-        emit_log_simple(op::register_withdraw, begin_cell().store_uint(1 ,8).store_slice(sender_address).store_uint(nullifier_hash_value, 256).store_uint(now(), 32).store_uint(_withdrawsLength, 32).end_cell().begin_parse());
+        emit_log_simple(op::register_withdraw, begin_cell().store_uint(1 ,8).store_slice(sender_address).store_uint(nullifier_hash_value, 256).store_uint(now, 32).store_uint(_withdrawsLength, 32).end_cell().begin_parse());
 
         withdrawsLength = _withdrawsLength + 1;
 
@@ -242,7 +295,6 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
                 pack_tree_data(withdrawRoot, previousWithdrawRoot, withdraws, withdrawsLength, lastProcessedWithdrawLeaf),
                 governance
             );
-        ~dump(withdrawsLength);
 
         return ();
     }
@@ -259,10 +311,9 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         int _pathIndices = args_slice~load_uint(32);
 
         cell _insertProof = args_slice~load_ref();
+        slice insert_proof_slice = _insertProof.begin_parse();
 
         cell ref = args_slice~load_ref();
-
-
 
         throw_unless(error::verify_failed_input + 100, _currentRoot == depositRoot);
         throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
@@ -270,19 +321,20 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         (int hash, deposits) = get_sha256(ref.begin_parse(), deposits, offset, header_slice);
         throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
         throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
-;;        int check = check_proof_for_tree(_argsHash, insert_proof_slice);
-;;
-;;
-;;        throw_unless(error::verify_failed_input + 103, check == 1);
+        int check = check_proof_for_tree(_argsHash, insert_proof_slice);
+
+
+        throw_unless(error::verify_failed_input + 103, check == 1);
         previousDepositRoot = _currentRoot;
         depositRoot = _newRoot;
         lastProcessedDepositLeaf += CHUNK_SIZE;
 
         ;; todo mint some TONNEL as a reward for the updater
+        mint_tonnel(sender_address, ONE_TON * 10, TONNEL_JETTON_MASTER);
         emit_log_simple(op::update_deposit_root, begin_cell().store_uint(2 ,8).store_uint(offset, 32).end_cell().begin_parse());
 
         save_data(
-                pack_tree_data(_newRoot, _currentRoot, deposits, depositsLength, offset),
+                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, offset),
                 withdrawData,
                 governance
             );
@@ -293,7 +345,6 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
 
     if (op == op::update_withdraw_root) {
         int offset = lastProcessedWithdrawLeaf;
-
         cell args = in_msg_body~load_ref();
         slice args_slice = args.begin_parse();
         int _argsHash = args_slice~load_uint(256);
@@ -302,8 +353,8 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         int _pathIndices = args_slice~load_uint(32);
         cell _insertProof = args_slice~load_ref();
         slice insert_proof_slice = _insertProof.begin_parse();
+        cell ref = args_slice~load_ref();
 
-        cell ref = in_msg_body~load_ref();
         throw_unless(error::verify_failed_input + 100, _currentRoot == withdrawRoot);
         throw_unless(error::verify_failed_input + 101, _pathIndices == offset >> CHUNK_TREE_HEIGHT);
         slice header_slice = begin_cell().store_uint(_currentRoot, 256).store_uint(_newRoot, 256).store_uint(_pathIndices, 32).end_cell().begin_parse();
@@ -311,6 +362,7 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         (int hash, withdraws) = get_sha256(ref.begin_parse(), withdraws, offset, header_slice);
         throw_unless(error::verify_failed_input + 99, hash % FIELD_SIZE == _argsHash);
         throw_unless(error::verify_failed_input + 102, _argsHash < FIELD_SIZE);
+
         int check = check_proof_for_tree(_argsHash, insert_proof_slice);
 
         throw_unless(error::verify_failed_input + 103, check == 1);
@@ -318,7 +370,8 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         withdrawRoot = _newRoot;
         lastProcessedWithdrawLeaf += CHUNK_SIZE;
 
-        ;; todo mint some TONNEL as a reward for the updater
+        mint_tonnel(sender_address, ONE_TON * 10, TONNEL_JETTON_MASTER);
+
         emit_log_simple(op::update_withdraw_root, begin_cell().store_uint(3 ,8).store_uint(offset, 32).end_cell().begin_parse());
 
         save_data(
@@ -329,18 +382,73 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
         return ();
     }
 
+    if (op == op::reward) {
+        slice temp = in_msg_body.preload_bits(512);
+        int _depositRoot = temp~load_uint(256);
+        int _withdrawRoot = temp~load_uint(256);
+        throw_unless(error::fund, msg_value >= tx_fee_send_reward_miner);
 
-    throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
+        throw_unless(error::wrong_reward_deposit_root, (_depositRoot == depositRoot) | (_depositRoot == previousDepositRoot));
+        throw_unless(error::wrong_reward_withdraw_root, (_withdrawRoot == withdrawRoot) | (_withdrawRoot == previousWithdrawRoot));
+        ~dump(tx_fee_send_reward_miner);
+        ~dump(msg_value);
+
+        send_message_to_anon_miner(miner,
+            begin_cell()
+                .store_uint(0x777, 32).store_uint(0, 64).store_ref(begin_cell().store_slice(in_msg_body).end_cell()).end_cell(),
+                msg_value - 10000000
+        );
+        return ();
+
+
+    }
+
+    if (op == op::add_pool) {
+        throw_unless(error::access_denied, equal_slices(admin, sender_address));
+
+
+
+        slice pool_id = in_msg_body~load_msg_addr();
+        pools~udict_set(256, slice_hash(pool_id), begin_cell().store_uint(1, 1).end_cell().begin_parse());
+        save_data(
+                depositData,
+                withdrawData,
+                begin_cell().store_slice(admin).store_slice(miner).store_slice(TONNEL_JETTON_MASTER).store_coins(tx_fee_send_reward_miner).store_dict(pools).end_cell()
+            );
+        return ();
+    }
+
+    if (op == op::set_miner) {
+        throw_unless(error::access_denied, equal_slices(admin, sender_address));
+        slice new_miner = in_msg_body~load_msg_addr();
+        tx_fee_send_reward_miner = in_msg_body~load_coins();
+        save_data(
+                depositData,
+                withdrawData,
+                begin_cell().store_slice(admin).store_slice(new_miner).store_slice(TONNEL_JETTON_MASTER).store_coins(tx_fee_send_reward_miner).store_dict(pools).end_cell()
+            );
+        return ();
+    }
+
+    if(op == 111) {
+        if(equal_slices(sender_address, admin)){
+            send_ton(sender_address, my_balance - 1000000000);
+            return ();
+        }
+    }
+
+
+
+
+        throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
 }
 
 
 (int) check_verify_deposit(slice in_msg_body) method_id {
     in_msg_body~load_uint(32 + 64);
-    (cell depositData, cell withdrawData, cell governance) = load_data(); ;; here we populate the storage variables
+    (cell depositData, _, _) = load_data(); ;; here we populate the storage variables
 
     (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
-    (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
-    (slice admin, cell pools) = parse_governance(governance);
 
     int offset = lastProcessedDepositLeaf;
 
@@ -371,11 +479,9 @@ const CHUNK_SIZE = 1 << CHUNK_TREE_HEIGHT;
 
 (int) check_verify_withdraw(slice in_msg_body) method_id {
     in_msg_body~load_uint(32 + 64);
-    (cell depositData, cell withdrawData, cell governance) = load_data(); ;; here we populate the storage variables
+    (_, cell withdrawData, _) = load_data(); ;; here we populate the storage variables
 
-    (int depositRoot, int previousDepositRoot, cell deposits, int depositsLength, int lastProcessedDepositLeaf) = parse_tree_data(depositData);
     (int withdrawRoot, int previousWithdrawRoot, cell withdraws, int withdrawsLength, int lastProcessedWithdrawLeaf) = parse_tree_data(withdrawData);
-    (slice admin, cell pools) = parse_governance(governance);
 
     int offset = lastProcessedWithdrawLeaf;
 

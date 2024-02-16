@@ -4,6 +4,8 @@
 
 const ONE_TON = 1000000000;
 const const::tx_fee_send_jetton = 40000000; ;; 0.04 TON
+const const::tx_fee_send_tree = 20000000; ;; 0.04 TON
+
 const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 () mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
     if (amount == 0) {
@@ -29,6 +31,17 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
                             .store_uint(0, 1)
                     .end_cell()
             );
+
+    send_raw_message(msg.end_cell(), 2); ;; paying fees, revert on errors
+}
+
+() send_message_tonnel_tree(slice recepient, builder payload) impure inline {
+    var msg = begin_cell()
+            .store_uint(0x18, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+            .store_slice(recepient)
+            .store_coins(const::tx_fee_send_tree)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_builder(payload);
 
     send_raw_message(msg.end_cell(), 2); ;; paying fees, revert on errors
 }
@@ -122,7 +135,7 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
     int tonnel_mint_amount_deposit = fee_info_slice~load_uint(32); ;; amount of jetton to mint for depositor, it should be multiplied by 10^9
     int tonnel_mint_amount_relayer = fee_info_slice~load_uint(32); ;; amount of jetton to mint for relayers, it should be multiplied by 10^9
 
-
+    slice TONNEL_TREE = fee_info_slice~load_msg_addr();
     int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
     int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
     if (op == op::deposit) {
@@ -156,6 +169,14 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         }
         mint_tonnel(sender_address, tonnel_mint_amount_deposit * ONE_TON / 100, tonnel_jetton_master_address);
 
+        send_message_tonnel_tree(TONNEL_TREE,
+            begin_cell()
+            .store_uint(0x888, 32)
+            .store_uint(0, 64)
+            .store_ref(
+                    begin_cell().store_uint(commitment_value, 256).store_uint(now(), 32).end_cell()
+            )
+        );
 
 
         save_data(merkle, fee_info, nullifiers, stucks);
@@ -242,6 +263,16 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         emit_log_simple(op::withdraw, begin_cell().store_uint(1 ,8).store_uint(nullifier_hash, 256).store_slice(recipient).store_uint(fee_coef, 32).end_cell().begin_parse());
 
         send_ton(sender_address, 0, SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
+
+        send_message_tonnel_tree(TONNEL_TREE,
+            begin_cell()
+            .store_uint(0x777, 32)
+            .store_uint(0, 64)
+            .store_ref(
+                begin_cell().store_uint(nullifier_hash, 256).store_uint(now(), 32).end_cell()
+            )
+        );
+
         return ();
 
 
@@ -284,12 +315,14 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         int new_fee_percent = in_msg_body~load_uint(10);
         int new_tonnel_mint_amount_deposit = in_msg_body~load_uint(32);
         int new_tonnel_mint_amount_relayer = in_msg_body~load_uint(32);
+        slice new_tonnel_tree = in_msg_body~load_msg_addr();
         save_data(merkle,
                 begin_cell()
                 .store_slice(fee_recepient).store_slice(tonnel_jetton_master_address)
                 .store_uint(new_fee_percent, 10)
                 .store_uint(new_tonnel_mint_amount_deposit, 32)
                 .store_uint(new_tonnel_mint_amount_relayer, 32)
+                .store_slice(new_tonnel_tree)
                 .end_cell(),
                 nullifiers, stucks);
         return ();

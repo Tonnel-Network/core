@@ -11,6 +11,7 @@ const op::change_config = 0x999;
 const op::remove_stuck_min = 0x111;
 const op::change_fee_address = 0x1c69253d;
 const op::change_fee_coef = 0x44f37bdf;
+const op::set_tonnel_tree = 0x666;
 
 ;; errors
 const error::unknown_op = 101;

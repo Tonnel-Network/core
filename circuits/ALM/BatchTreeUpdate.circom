@@ -1,5 +1,5 @@
 include "./TreeUpdateArgsHasher.circom";
-include "../merkleTree.circom";
+include "./merkleTree.circom";
 
 // Computes hashes of the next tree layer
 template TreeLayer(height) {
@@ -75,5 +75,4 @@ template BatchTreeUpdate(levels, batchLevels, zeroBatchLeaf) {
 }
 
 
-var CHUNK_TREE_HEIGHT = 5;
-component main = BatchTreeUpdate(20, CHUNK_TREE_HEIGHT, 5317915487676474732911196525164120357633795330514300708063518321779700432106)
+component main = BatchTreeUpdate(20, 5, 18506397520252640569173256109205328697030515085438968144745349329215369264802)

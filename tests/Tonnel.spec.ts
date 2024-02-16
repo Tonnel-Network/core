@@ -172,6 +172,7 @@ describe('Tonnel', () => {
           depositorTonnelMint: 200,
           relayerTonnelMint: 100,
           protocolFee: 10,
+            TONNEL_TREE_ADDRESS: owner.address
         },
         code
       )

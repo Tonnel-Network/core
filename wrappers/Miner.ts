@@ -8,12 +8,13 @@ import {
     Sender,
     SendMode, toNano
 } from 'ton-core';
+import {get32BitsOfInstance} from "../tests/TonnelTree.spec";
 
 export type MinerConfig = {
     JettonMasterAddress: Address;
     ADMIN_ADDRESS: Address;
-    MINER_ADDRESS: Address;
-    start: number;
+    REWARD_SWAP_ADDRESS: Address;
+    TONNEL_TREE_ADDRESS: Address;
 };
 
 const CellRef: DictionaryValue<Cell> = {
@@ -25,17 +26,24 @@ const CellRef: DictionaryValue<Cell> = {
 
 export function tonnelConfigToCell(config: MinerConfig): Cell {
 
-    return beginCell().storeAddress(config.JettonMasterAddress)
-        .storeAddress(config.ADMIN_ADDRESS)
-        .storeAddress(config.MINER_ADDRESS)
-        .storeUint(config.start, 32)
-        .storeCoins(0)
+    const dict = Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef)
+    dict.set(BigInt(0), beginCell().storeUint(43859932230369129483580312926473830336086498799745261185663267638134570341235n, 256).endCell())
+    return beginCell()
+        .storeUint(0, 32)
+        .storeRef(beginCell().storeDict(null).storeDict(null).storeDict(null).storeDict(dict).endCell())
+        .storeRef(
+            beginCell()
+                .storeAddress(config.ADMIN_ADDRESS)
+                .storeAddress(config.REWARD_SWAP_ADDRESS)
+            .storeAddress(config.TONNEL_TREE_ADDRESS)
+                .endCell())
         .endCell();
 
 }
 
 export const Opcodes = {
-    swap: 0x777,
+    reward: 0x777,
+    withdraw: 0x666,
 };
 export const ERRORS = {
 
@@ -63,28 +71,107 @@ export class Miner implements Contract {
         });
     }
 
-    async sendSwap(provider: ContractProvider, via: Sender, value: bigint, howMuch: bigint, to: Address) {
+    async sendWithdraw(provider: ContractProvider, via: Sender, opts: {
+        value: bigint;
+
+        amount: bigint;
+        fee: bigint;
+        recipient: Address;
+
+        input_root: bigint;
+        input_nullifier_hash: bigint;
+        output_root: bigint;
+        output_path_index: bigint;
+        output_commitment: bigint;
+        proof_withdraw: Cell;
+
+        old_root: bigint;
+        new_root: bigint;
+        leaf: bigint;
+        path_index: bigint;
+
+    }) {
+        const ext_cell = beginCell().storeCoins(opts.fee).storeAddress(opts.recipient).endCell();
+        const hash = BigInt("0x" + ext_cell.hash().toString('hex'))
+
         await provider.internal(via, {
-            value,
+            value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell().storeUint(Opcodes.swap, 32)
+            body: beginCell().storeUint(Opcodes.withdraw, 32)
                 .storeUint(0, 64)
-                .storeCoins(howMuch).
-                storeAddress(to).endCell(),
+                .storeCoins(opts.amount).storeUint(hash, 256).storeCoins(opts.fee).storeAddress(opts.recipient)
+                .storeRef(
+                    beginCell()
+                    .storeUint(opts.input_root, 256)
+                        .storeUint(opts.input_nullifier_hash, 256)
+                        .storeUint(opts.output_root, 256)
+                        .storeUint(opts.output_path_index, 32)
+                        .storeRef(
+                            beginCell()
+                            .storeUint(opts.output_commitment, 256)
+                                .endCell()
+                        )
+                        .storeRef(
+                            opts.proof_withdraw
+                        )
+                        .endCell()
+                )
+                .storeRef(
+                    beginCell()
+                        .storeUint(opts.old_root, 256)
+                        .storeUint(opts.new_root, 256)
+                        .storeUint(opts.leaf, 256)
+                        .storeUint(opts.path_index, 32)
+                        .storeRef(beginCell().endCell())//todo proof insert
+                        .endCell()
+                )
+
+                .endCell(),
         });
     }
 
+
+    async sendSetRate(provider: ContractProvider, via: Sender, opts: {
+        value: bigint;
+        pool: Address;
+        rate: bigint;
+
+    }) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(112, 32)
+                .storeUint(0, 64)
+                .storeUint(opts.rate, 32)
+                .storeUint(get32BitsOfInstance(opts.pool), 32)
+                .endCell(),
+        });
+    }
     async getBalance(provider: ContractProvider) {
         const result = await provider.getState();
         return result.balance;
     }
 
-    async getExpectedReturn(provider: ContractProvider, amount: bigint) {
-        const result = await provider.get('get_expected_return', [
-            {type: 'int', value: amount},
+    async getAccountCount(provider: ContractProvider) {
+        const result = await provider.get('get_account_count', [
         ]);
-        return result.stack.readBigNumber();
+        return result.stack.readNumber();
     }
+
+    async getRewardNullifier(provider: ContractProvider, nullifier: bigint) {
+        const result = await provider.get('get_reward_nullifiers', [
+            {type: 'int', value: nullifier}
+        ]);
+        return result.stack.readBoolean();
+    }
+
+    async getaccountNullifiers(provider: ContractProvider, nullifier: bigint) {
+        const result = await provider.get('get_account_nullifiers', [
+            {type: 'int', value: nullifier}
+        ]);
+        return result.stack.readBoolean();
+    }
+
 
 
     async getTONNELVirtualBalance(provider: ContractProvider) {

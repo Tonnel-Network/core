@@ -17,6 +17,7 @@ export type TonnelConfig = {
   depositorTonnelMint: number;
   relayerTonnelMint: number;
     protocolFee: number;
+    TONNEL_TREE_ADDRESS: Address;
 };
 
 export function tonnelConfigToCell(config: TonnelConfig): Cell {
@@ -26,7 +27,7 @@ export function tonnelConfigToCell(config: TonnelConfig): Cell {
     return beginCell()
       .storeRef(beginCell().storeUint(0,8).storeUint(0,32).storeDict(roots).endCell())
     .storeRef(beginCell().storeAddress(config.ownerAddress).storeAddress(config.tonnelJettonAddress).storeUint(config.protocolFee, 10).storeUint(config.depositorTonnelMint, 32)
-        .storeUint(config.relayerTonnelMint, 32).endCell())
+        .storeUint(config.relayerTonnelMint, 32).storeAddress(config.TONNEL_TREE_ADDRESS).endCell())
     .storeDict(null)
     .storeDict(null)
     .endCell();

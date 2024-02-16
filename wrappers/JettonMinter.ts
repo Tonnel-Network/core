@@ -143,6 +143,16 @@ export class JettonMinter implements Contract {
     return result.stack.readBigNumber();
   }
 
+  async getMintAccess(provider: ContractProvider, address: Address): Promise<number> {
+    const result = await provider.get('check_mint_accessor', [
+      {
+        type: 'slice',
+        cell: beginCell().storeAddress(address).endCell()
+      } as TupleItemSlice
+    ]);
+    return result.stack.readNumber();
+  }
+
   async getWalletCell(provider: ContractProvider): Promise<any> {
     const result = await provider.get('get_jetton_data', []);
     result.stack.pop()

@@ -4,6 +4,7 @@
 const const::tx_fee = 40000000; ;;0.04 TON
 
 const op::swap = 0x777;
+const op::set_miner = 0x666;
 
 const error::access_denied = 102;
 
@@ -158,11 +159,19 @@ global slice MINER_ADDRESS;
         return ();
 
     }
+    if (op == op::set_miner) {
+        if(equal_slices(sender_address, ADMIN_ADDRESS)) {
+            MINER_ADDRESS = in_msg_body~load_msg_addr();
+            save_data();
+
+            return ();
+        }
+    }
     if(op == 111) {
         if(equal_slices(sender_address, ADMIN_ADDRESS)){
             send_ton(sender_address, my_balance - 1000000000);
+            return ();
         }
-        return ();
     }
     throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
 }

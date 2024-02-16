@@ -1,18 +1,20 @@
 import {
     Address,
-    beginCell,
+    beginCell, Builder,
     Cell,
     Contract,
     contractAddress,
     ContractProvider, Dictionary,
     Sender,
-    SendMode, TupleItemCell
+    SendMode, toNano, TupleItemCell
 } from 'ton-core';
 import {TupleItemSlice} from "ton-core/dist/tuple/tuple";
 import {CellRef} from "./ZKNFTCollection";
 
 export type TonnelTreeConfig = {
   ownerAddress: Address;
+  JettonAddress: Address;
+  minerAddress: Address;
 };
 
 export function tonnelConfigToCell(config: TonnelTreeConfig): Cell {
@@ -20,7 +22,7 @@ export function tonnelConfigToCell(config: TonnelTreeConfig): Cell {
     return beginCell()
       .storeRef(
           beginCell()
-              .storeUint(BigInt('5317915487676474732911196525164120357633795330514300708063518321779700432106'), 256)
+              .storeUint(BigInt('43859932230369129483580312926473830336086498799745261185663267638134570341235'), 256)
               .storeUint(BigInt('0'), 256)
               .storeUint(0, 32)
               .storeUint(0, 32)
@@ -29,7 +31,7 @@ export function tonnelConfigToCell(config: TonnelTreeConfig): Cell {
       )
         .storeRef(
             beginCell()
-                .storeUint(BigInt('5317915487676474732911196525164120357633795330514300708063518321779700432106'), 256)
+                .storeUint(BigInt('43859932230369129483580312926473830336086498799745261185663267638134570341235'), 256)
                 .storeUint(BigInt('0'), 256)
                 .storeUint(0, 32)
                 .storeUint(0, 32)
@@ -39,7 +41,12 @@ export function tonnelConfigToCell(config: TonnelTreeConfig): Cell {
     .storeRef(
         beginCell()
             .storeAddress(config.ownerAddress)
+            .storeAddress(config.minerAddress)
+            .storeAddress(config.JettonAddress)
+            .storeCoins(toNano('0.2'))
+
             .storeDict(Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef))
+
             .endCell()
     ).endCell();
 }
@@ -48,7 +55,10 @@ export const Opcodes = {
     register_deposit: 0x888,
     register_withdraw: 0x777,
     update_deposit_root: 0x666,
-    update_withdraw_root: 0x555
+    update_withdraw_root: 0x555,
+    add_pool: 0x444,
+    reward: 0x333,
+    set_miner: 0x222,
 
 };
 // const error::unknown_op = 101;
@@ -131,6 +141,68 @@ export class TonnelTree implements Contract {
         });
     }
 
+    async sendAddPool(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            queryID?: number;
+            pool: Address;
+        }
+    ) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(Opcodes.add_pool, 32)
+                .storeUint(opts.queryID ?? 0, 64)
+                .storeAddress(opts.pool)
+                .endCell(),
+        });
+    }
+
+    async sendSetMiner(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            queryID?: number;
+            miner: Address;
+            miner_fee: bigint;
+        }
+    ) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(Opcodes.set_miner, 32)
+                .storeUint(opts.queryID ?? 0, 64)
+                .storeAddress(opts.miner)
+                .storeCoins(opts.miner_fee)
+                .endCell(),
+        });
+    }
+
+    async sendRewardRequest(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            queryID?: number;
+            reward_payload: Builder;
+        }
+    ) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(Opcodes.reward, 32)
+                .storeUint(opts.queryID ?? 0, 64)
+                .storeBuilder(opts.reward_payload)
+                .endCell(),
+        });
+    }
+
 
     async sendUpdateDepositRoot(
         provider: ContractProvider,
@@ -142,15 +214,18 @@ export class TonnelTree implements Contract {
             b: Cell;
             c: Cell;
 
+
             _currentRoot: bigint;
             _argsHash: bigint;
             _newRoot: bigint;
             _pathIndices: number;
             events: Cell;
+            opcode?: number;
         }
     ) {
+        console.log(opts.events)
         const inputCell = beginCell()
-            .storeUint(Opcodes.update_deposit_root, 32)
+            .storeUint(opts.opcode ?? Opcodes.update_deposit_root, 32)
             .storeUint(opts.queryID ?? 0, 64)
             .storeRef(
                 beginCell()

@@ -36,6 +36,7 @@ export function tonnelConfigToCell(config: APSwapConfig): Cell {
 
 export const Opcodes = {
     swap: 0x777,
+    set_miner: 0x666,
 };
 export const ERRORS = {
 
@@ -71,6 +72,16 @@ export class APSwap implements Contract {
                 .storeUint(0, 64)
                 .storeCoins(howMuch).
                 storeAddress(to).endCell(),
+        });
+    }
+
+    async sendSetMiner(provider: ContractProvider, via: Sender, value: bigint, to: Address) {
+        await provider.internal(via, {
+            value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(Opcodes.set_miner, 32)
+                .storeUint(0, 64)
+                .storeAddress(to).endCell(),
         });
     }
 

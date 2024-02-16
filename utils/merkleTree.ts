@@ -23,6 +23,9 @@ export const mimcHash = (items: any[]) =>
 export const mimcHash2 = (a: any, b: any) =>
     (mimcsponge.multiHash([BigInt(a), BigInt(b)]).toString())
 
+export const mimcHash3 = (a: any, b: any, c: any) =>
+    (mimcsponge.multiHash([BigInt(a), BigInt(b), BigInt(c)]).toString())
+
 
 export interface IMerkleTree {
   root: () => string;
