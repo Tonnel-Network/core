@@ -152,7 +152,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
                     int hash = event_slice2~load_uint(256);
                     int timestamp = event_slice2~load_uint(32);
                     int hash_result = cell_hash(begin_cell().store_uint(instance, 32).store_uint(hash, 256).store_uint(timestamp, 32).end_cell());
-                    (slice res, int found) = history.udict_get?(32, offset + count);
+                    (slice res, int found) = history~udict_delete_get?(32, offset + count);
 
 
                     throw_unless(error::verify_failed + 200 + count, hash_result == res~load_uint(256));

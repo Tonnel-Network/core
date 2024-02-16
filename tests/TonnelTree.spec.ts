@@ -814,7 +814,7 @@ describe('TonnelTree', () => {
     console.log('before-1', await tonnelTree.getBalance());
 
     const updateResult = await tonnelTree.sendUpdateDepositRoot(owner.getSender(), {
-        value: toNano('0.2'),
+        value: toNano('0.22'),
       a: a,
       b: b,
       c: c,
@@ -880,7 +880,7 @@ describe('TonnelTree', () => {
         }
       }
       const updateResult = await tonnelTree.sendUpdateDepositRoot(owner.getSender(), {
-        value: toNano('0.2'),
+        value: toNano('0.22'),
         a: a,
         b: b,
         c: c,
