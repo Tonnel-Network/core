@@ -446,8 +446,6 @@ global int AccountUpdate::outputCommitment;
         return ();
     }
     if (op == op::withdraw) {
-        ~dump(3123123);
-        ~dump(get_gas_spent());
         int amount = in_msg_body~load_coins();
         throw_unless(error::verify_failed + 1, amount < 1 << 248);
         int extDataHash = in_msg_body~load_uint(256);
@@ -480,11 +478,8 @@ global int AccountUpdate::outputCommitment;
         TreeUpdateArgs::leaf = _tree_args_slice~load_uint(256);
         TreeUpdateArgs::pathIndices = _tree_args_slice~load_uint(32);
         slice tree_proof = _tree_args_slice~load_ref().begin_parse();
-        ~dump(get_gas_spent());
 
         validateAccountUpdate(tree_proof);
-        ~dump(get_gas_spent());
-~dump(313213);
         int check = check_proof_for_withdraw(amount, extDataHash, _proof);
 
         throw_unless(error::verify_failed + 3, check == 1);
@@ -495,9 +490,6 @@ global int AccountUpdate::outputCommitment;
         }
 
         accountNullifiers~udict_set(256, AccountUpdate::inputNullifierHash, begin_cell().store_uint(1, 8).end_cell().begin_parse());
-        ~dump(get_gas_spent());
-        ~dump(313213);
-
         throw_unless(error::verify_failed + 4, amount >= fee);
 
         if (fee > 0) {
@@ -515,11 +507,7 @@ global int AccountUpdate::outputCommitment;
         }
 
         emit_log_simple(op::new_account, begin_cell().store_uint(1 ,4).store_uint(AccountUpdate::outputCommitment, 256).store_uint(AccountUpdate::inputNullifierHash, 256).store_uint(accountCount - 1, 32).store_ref(begin_cell().store_slice(recipient).end_cell()).end_cell().begin_parse());
-        ~dump(3123124);
-        ~dump(get_gas_spent());
-
         save_data();
-        ~dump(get_gas_spent());
 
         return ();
     }
@@ -548,14 +536,99 @@ global int AccountUpdate::outputCommitment;
 
 (int) check_verify_reward(slice in_msg_body) method_id {
 
+    load_data();
 
-    return 0;
+    int depositRoot = in_msg_body~load_uint(256);
+    int withdrawalRoot = in_msg_body~load_uint(256);
+    cell _reward_args = in_msg_body~load_ref();
+    slice _reward_args_slice = _reward_args.begin_parse();
+    int rate = _reward_args_slice~load_uint(32);
+    int fee = _reward_args_slice~load_coins();
+    int instance = _reward_args_slice~load_uint(32);
+    int rewardNullifier = _reward_args_slice~load_uint(256);
+    slice relayer_address = _reward_args_slice~load_msg_addr();
+    AccountUpdate::inputRoot = _reward_args_slice~load_uint(256);
+    slice _reward_args_slice2 = _reward_args_slice~load_ref().begin_parse();
+    AccountUpdate::inputNullifierHash = _reward_args_slice2~load_uint(256);
+    AccountUpdate::outputRoot = _reward_args_slice2~load_uint(256);
+    AccountUpdate::outputPathIndices = _reward_args_slice2~load_uint(32);
+    AccountUpdate::outputCommitment = _reward_args_slice2~load_uint(256);
+
+
+    slice reward_proof = _reward_args_slice~load_ref().begin_parse();
+
+    cell _tree_args = in_msg_body~load_ref();
+    slice _tree_args_slice = _tree_args.begin_parse();
+    TreeUpdateArgs::oldRoot = _tree_args_slice~load_uint(256);
+    TreeUpdateArgs::newRoot = _tree_args_slice~load_uint(256);
+    TreeUpdateArgs::leaf = _tree_args_slice~load_uint(256);
+    TreeUpdateArgs::pathIndices = _tree_args_slice~load_uint(32);
+    slice tree_proof = _tree_args_slice~load_ref().begin_parse();
+
+    validateAccountUpdate(tree_proof);
+
+    throw_unless(error::verify_failed + 9, fee < 1 << 248);
+    throw_unless(error::verify_failed + 10, (rate > 0) & (
+        get_rate_pool(instance) == rate
+    ));
+    (_, int found) = rewardNullifiers.udict_get?(256, rewardNullifier);
+    throw_unless(error::verify_failed + 11, found == 0);
+    int check = check_proof_for_reward(rate, fee, instance, rewardNullifier, depositRoot, withdrawalRoot, reward_proof);
+
+    ifnot (check) {
+        return 0;
+    }
+    return 1;
 
 }
 
 (int) check_verify_withdraw(slice in_msg_body) method_id {
-    return 0;
-   ;;todo
+
+    in_msg_body~load_uint(32 + 64);
+
+    load_data();
+
+    int amount = in_msg_body~load_coins();
+    throw_unless(error::verify_failed + 1, amount < 1 << 248);
+    int extDataHash = in_msg_body~load_uint(256);
+    int fee = in_msg_body~load_coins();
+    slice recipient = in_msg_body~load_msg_addr();
+    int data_hash = slice_hash(
+        begin_cell()
+        .store_coins(fee)
+        .store_slice(recipient)
+        .end_cell().begin_parse()
+    );
+    throw_unless(error::verify_failed + 2, data_hash == extDataHash);
+
+    cell _account_args = in_msg_body~load_ref();
+
+    slice _account_args_slice = _account_args.begin_parse();
+    AccountUpdate::inputRoot = _account_args_slice~load_uint(256);
+    AccountUpdate::inputNullifierHash = _account_args_slice~load_uint(256);
+    AccountUpdate::outputRoot = _account_args_slice~load_uint(256);
+    AccountUpdate::outputPathIndices = _account_args_slice~load_uint(32);
+    slice _account_args_slice2 = _account_args_slice~load_ref().begin_parse();
+    AccountUpdate::outputCommitment = _account_args_slice2~load_uint(256);
+    slice _proof = _account_args_slice~load_ref().begin_parse();
+
+
+    cell _tree_args = in_msg_body~load_ref();
+    slice _tree_args_slice = _tree_args.begin_parse();
+    TreeUpdateArgs::oldRoot = _tree_args_slice~load_uint(256);
+    TreeUpdateArgs::newRoot = _tree_args_slice~load_uint(256);
+    TreeUpdateArgs::leaf = _tree_args_slice~load_uint(256);
+    TreeUpdateArgs::pathIndices = _tree_args_slice~load_uint(32);
+    slice tree_proof = _tree_args_slice~load_ref().begin_parse();
+
+    validateAccountUpdate(tree_proof);
+    int check = check_proof_for_withdraw(amount, extDataHash, _proof);
+
+    ifnot (check) {
+        return 0;
+    }
+    return 1;
+
 }
 
 (int) get_account_count() method_id {

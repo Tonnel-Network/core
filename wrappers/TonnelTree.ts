@@ -48,7 +48,7 @@ export function tonnelConfigToCell(config: TonnelTreeConfig): Cell {
             .storeAddress(config.ownerAddress)
             .storeAddress(config.minerAddress)
             .storeAddress(config.JettonAddress)
-            .storeCoins(toNano('0.2'))
+            .storeCoins(toNano('0.24'))
 
             .storeDict(Dictionary.empty(Dictionary.Keys.BigUint(256), CellRef))
 
@@ -197,6 +197,9 @@ export class TonnelTree implements Contract {
             reward_payload: Builder;
         }
     ) {
+
+
+
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,

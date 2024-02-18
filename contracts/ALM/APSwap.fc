@@ -11,8 +11,8 @@ const error::access_denied = 102;
 const ONE_TON = 1000000000;
 
 const DURATION = 365 * 86400; ;; 365 days
-const initialLiquidity = ONE_TON * 0; ;; 10,000 TONNEL
-const liquidity = ONE_TON * 500000; ;; 490,000 TONNEL
+const initialLiquidity = ONE_TON * 30000; ;; 30,000 TONNEL
+const liquidity = ONE_TON * 470000; ;; 470,000 TONNEL
 const int poolWeight = 100000000000; ;; 100,000,000,000
 
 global int start_timestamp;
