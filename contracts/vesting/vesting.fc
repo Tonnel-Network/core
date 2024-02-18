@@ -10,9 +10,9 @@ const error::cliff_not_passed = 103;
 const op::claim_TONNEL = "op::claim_TONNEL"c;
 
 
-const time::start = 1692550800; ;; Sun Aug 20 2023 17:00:00 GMT+0000
-const time::end = 1700503200; ;; Mon Nov 20 2023 18:00:00 GMT+0000
-const time::cliff = 1 * 60 * 60 * 24 * 30; ;; 30 days
+const time::start = 1697580000; ;; Tue Oct 17 2023 22:00:00 GMT+0000
+const time::end = 1702854000; ;; Sun Dec 17 2023 23:00:00 GMT+0000
+const time::cliff = 0; ;; 30 days
 
 
 (cell, slice) load_data() impure {

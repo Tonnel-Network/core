@@ -20,8 +20,8 @@ template RevealNFT(levels) {
     tree.root <== root;
 
     for (var i = 0; i < levels; i++) {
-          tree.pathElements[i] <== pathElements[i];
-          tree.pathIndices[i] <== pathIndices[i];
+        tree.pathElements[i] <== pathElements[i];
+        tree.pathIndices[i] <== pathIndices[i];
     }
 
     component nullifierHasher = HashLeftRight();

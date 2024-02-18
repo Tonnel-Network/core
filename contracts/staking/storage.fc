@@ -1,11 +1,11 @@
 #include "../imports/stdlib.fc";
 
 ;; storage variables
-int op::stake_TON() asm "777 PUSHINT";
 int op::stake_TONNEL() asm "778 PUSHINT";
-int op::withdraw_TON() asm "779 PUSHINT";
 int op::withdraw_TONNEL() asm "780 PUSHINT";
-int op::set_TONNEL() asm "781 PUSHINT";
+int op::claim_TON() asm "779 PUSHINT";
+int op::claim_TONNEL() asm "781 PUSHINT";
+
 const error::not_staked = 700;
 const error::not_enough = 701;
 const error::jetton_sender = 109;

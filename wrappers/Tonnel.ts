@@ -1,35 +1,35 @@
 import {
-  Address,
-  beginCell,
-  Cell,
-  Contract,
-  contractAddress,
-  ContractProvider,
-  Sender,
-  SendMode, TupleItemCell
+    Address,
+    beginCell,
+    Cell,
+    Contract,
+    contractAddress,
+    ContractProvider, Dictionary,
+    Sender,
+    SendMode, TupleItemCell
 } from 'ton-core';
 import {TupleItemSlice} from "ton-core/dist/tuple/tuple";
+import {CellRef} from "./ZKNFTCollection";
 
 export type TonnelConfig = {
   ownerAddress: Address;
   tonnelJettonAddress: Address;
   depositorTonnelMint: number;
   relayerTonnelMint: number;
+    protocolFee: number;
+    TONNEL_TREE_ADDRESS: Address;
 };
 
 export function tonnelConfigToCell(config: TonnelConfig): Cell {
+    const roots = Dictionary.empty(Dictionary.Keys.BigUint(8), CellRef)
+    roots.set(BigInt(0), beginCell().storeUint(43859932230369129483580312926473830336086498799745261185663267638134570341235n, 256).endCell())
 
-  return beginCell().storeUint(0, 8)
-    .storeRef(beginCell().endCell())
-    .storeRef(beginCell().storeAddress(config.ownerAddress).storeUint(20, 10).endCell())
+    return beginCell()
+      .storeRef(beginCell().storeUint(0,8).storeUint(0,32).storeDict(roots).endCell())
+    .storeRef(beginCell().storeAddress(config.ownerAddress).storeAddress(config.tonnelJettonAddress).storeUint(config.protocolFee, 10).storeUint(config.depositorTonnelMint, 32)
+        .storeUint(config.relayerTonnelMint, 32).storeAddress(config.TONNEL_TREE_ADDRESS).endCell())
     .storeDict(null)
-    .storeRef(
-      beginCell()
-        .storeAddress(config.tonnelJettonAddress)
-        .storeUint(config.depositorTonnelMint, 32)
-        .storeUint(config.relayerTonnelMint, 32)
-        .endCell()
-    )
+    .storeDict(null)
     .endCell();
 }
 
@@ -37,6 +37,9 @@ export const Opcodes = {
   deposit: 0x888,
   continue: 0x00,
   withdraw: 0x777,
+    changeConfig: 0x999,
+    stuck_remove: 0x111
+
 };
 // const error::unknown_op = 101;
 // const error::access_denied = 102;
@@ -85,6 +88,9 @@ export class Tonnel implements Contract {
       value: bigint;
       queryID?: number;
       commitment: bigint;
+      newRoot: bigint;
+      oldRoot: bigint;
+      payload: Cell;
     }
   ) {
     await provider.internal(via, {
@@ -93,7 +99,38 @@ export class Tonnel implements Contract {
       body: beginCell()
         .storeUint(Opcodes.deposit, 32)
         .storeUint(opts.queryID ?? 0, 64)
-        .storeRef(beginCell().storeUint(opts.commitment, 256).endCell())
+        .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(
+            opts.newRoot, 256
+        ).storeUint(
+            opts.oldRoot, 256
+        ).storeRef(opts.payload).endCell())
+        .endCell(),
+    });
+  }
+
+  async sendRemoveMinStuck(
+    provider: ContractProvider,
+    via: Sender,
+    opts: {
+      value: bigint;
+      queryID?: number;
+      commitment: bigint;
+      newRoot: bigint;
+      oldRoot: bigint;
+      payload: Cell;
+    }
+  ) {
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell()
+        .storeUint(Opcodes.stuck_remove, 32)
+        .storeUint(opts.queryID ?? 0, 64)
+        .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(
+            opts.newRoot, 256
+        ).storeUint(
+            opts.oldRoot, 256
+        ).storeRef(opts.payload).endCell())
         .endCell(),
     });
   }
@@ -129,7 +166,10 @@ export class Tonnel implements Contract {
       )
       .endCell()
     // const check = await this.getCheckVerify(provider, inputCell);
-    // console.log(check)
+    //   console.log(check)
+    // if (check !== 1) {
+    //     throw new Error(`Withdraw check failed: ${check}`);
+    // }
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
@@ -137,20 +177,26 @@ export class Tonnel implements Contract {
     });
   }
 
-  async sendContinue(
+  async sendChangeConfig(
     provider: ContractProvider,
     via: Sender,
     opts: {
       value: bigint;
       queryID?: number;
+      new_fee_per_thousand: number;
+        new_tonnel_mint_amount_deposit: number;
+        new_tonnel_mint_amount_relayer: number;
     }
   ) {
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
       body: beginCell()
-        .storeUint(Opcodes.continue, 32)
+        .storeUint(Opcodes.changeConfig, 32)
         .storeUint(opts.queryID ?? 0, 64)
+          .storeUint(opts.new_fee_per_thousand, 10)
+          .storeUint(opts.new_tonnel_mint_amount_deposit, 32)
+          .storeUint(opts.new_tonnel_mint_amount_relayer, 32)
         .endCell(),
     });
   }
@@ -172,6 +218,12 @@ export class Tonnel implements Contract {
     console.log(result.stack)
     return result.stack.readNumber();
   }
+
+    async getMinStuck(provider: ContractProvider) {
+        const result = await provider.get('get_min_stuck', []);
+        console.log(result.stack)
+        return result.stack.readNumber();
+    }
 
   async getBalance(provider: ContractProvider) {
     const result = await provider.getState();

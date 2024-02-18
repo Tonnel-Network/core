@@ -4,11 +4,12 @@ import {
   Cell,
   Contract,
   contractAddress,
-  ContractProvider,
+  ContractProvider, Dictionary,
   Sender,
   SendMode, toNano
 } from 'ton-core';
 import {TupleItemSlice} from "ton-core/dist/tuple/tuple";
+import {CellRef} from "./ZKNFTCollection";
 
 export type TonnelJettonConfig = {
   ownerAddress: Address;
@@ -17,27 +18,32 @@ export type TonnelJettonConfig = {
   tonnelJettonAddress: Address;
   depositorTonnelMint: number;
   relayerTonnelMint: number;
+  protocolFee: number; // out of 1000
+
 };
 
 export function tonnelConfigToCell(config: TonnelJettonConfig): Cell {
+  const roots = Dictionary.empty(Dictionary.Keys.BigUint(8), CellRef)
+  roots.set(BigInt(0), beginCell().storeUint(43859932230369129483580312926473830336086498799745261185663267638134570341235n, 256).endCell())
 
-  return beginCell().storeUint(0, 8)
-    .storeRef(beginCell().endCell())
+  return beginCell()
+      .storeRef(beginCell().storeUint(0,8).storeUint(0,32).storeDict(roots).endCell())
     .storeRef(
       beginCell()
         .storeAddress(config.ownerAddress)
-        .storeUint(20, 10)
         .storeAddress(config.tonnelJettonAddress)
-        .storeUint(config.depositorTonnelMint, 32)
+          .storeUint(config.protocolFee, 16)
+          .storeUint(config.depositorTonnelMint, 32)
         .storeUint(config.relayerTonnelMint, 32)
-        .storeCoins(toNano('1.6'))
-        .storeCoins(toNano('0.8'))
-        .endCell()
+          .storeCoins(0)
+          .storeCoins(toNano('0.15'))
+          .endCell()
     ).storeDict(null)
     .storeRef(
       beginCell()
         .storeAddress(config.jettonMinterAddress)
         .storeRef(config.jettonWalletBytecode)
+          .storeDict(null)
         .endCell()
   ).endCell();
 }
@@ -46,7 +52,9 @@ export const Opcodes = {
   deposit: 0x888,
   continue: 0x00,
   withdraw: 0x777,
-  changeFee: 0x999
+  changeConfig: 0x999,
+  claimFee: 0x222,
+  stuck_remove: 0x111
 };
 // const error::unknown_op = 101;
 // const error::access_denied = 102;
@@ -88,25 +96,6 @@ export class TonnelJetton implements Contract {
     });
   }
 
-  async sendDeposit(
-    provider: ContractProvider,
-    via: Sender,
-    opts: {
-      value: bigint;
-      queryID?: number;
-      commitment: bigint;
-    }
-  ) {
-    await provider.internal(via, {
-      value: opts.value,
-      sendMode: SendMode.PAY_GAS_SEPARATELY,
-      body: beginCell()
-        .storeUint(Opcodes.deposit, 32)
-        .storeUint(opts.queryID ?? 0, 64)
-        .storeRef(beginCell().storeUint(opts.commitment, 256).endCell())
-        .endCell(),
-    });
-  }
 
   async sendWithdraw(
     provider: ContractProvider,
@@ -120,7 +109,7 @@ export class TonnelJetton implements Contract {
       root: bigint;
       nullifierHash: bigint;
       recipient: Address;
-      fee: number;
+      fee: bigint;
     }
   ) {
     await provider.internal(via, {
@@ -145,23 +134,33 @@ export class TonnelJetton implements Contract {
     });
   }
 
-  async sendContinue(
-    provider: ContractProvider,
-    via: Sender,
-    opts: {
-      value: bigint;
-      queryID?: number;
-    }
+  async sendRemoveMinStuck(
+      provider: ContractProvider,
+      via: Sender,
+      opts: {
+        value: bigint;
+        queryID?: number;
+        commitment: bigint;
+        newRoot: bigint;
+        oldRoot: bigint;
+        payload: Cell;
+      }
   ) {
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
       body: beginCell()
-        .storeUint(Opcodes.continue, 32)
-        .storeUint(opts.queryID ?? 0, 64).storeAddress(via.address)
-        .endCell(),
+          .storeUint(Opcodes.stuck_remove, 32)
+          .storeUint(opts.queryID ?? 0, 64)
+          .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(
+              opts.newRoot, 256
+          ).storeUint(
+              opts.oldRoot, 256
+          ).storeRef(opts.payload).endCell())
+          .endCell(),
     });
   }
+
   async sendChangeFee(
       provider: ContractProvider,
       via: Sender,
@@ -172,30 +171,50 @@ export class TonnelJetton implements Contract {
           tonnelJettonAddress: Address;
           depositorTonnelMint: number;
           relayerTonnelMint: number;
+        depositGasFee: bigint;
+        newFeePerThousand: number;
+
       }
     ) {
       await provider.internal(via, {
         value: opts.value,
         sendMode: SendMode.PAY_GAS_SEPARATELY,
         body: beginCell()
-          .storeUint(Opcodes.changeFee, 32)
+          .storeUint(Opcodes.changeConfig, 32)
           .storeUint(opts.queryID ?? 0, 64)
             .storeRef(
                 beginCell()
                     .storeAddress(opts.ownerAddress)
-                    .storeUint(20, 10)
-                    .storeAddress(opts.tonnelJettonAddress)
+                    .storeUint(opts.newFeePerThousand, 16)
                     .storeUint(opts.depositorTonnelMint, 32)
                     .storeUint(opts.relayerTonnelMint, 32)
-                    .storeCoins(toNano('1.6'))
-                    .storeCoins(toNano('0.8'))
+                    .storeCoins(opts.depositGasFee)
                     .endCell()
             )
           .endCell(),
       });
    }
 
-  async getLastRoot(provider: ContractProvider) {
+    async sendClaimFee(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            queryID?: number;
+        }
+    ) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(Opcodes.claimFee, 32)
+                .storeUint(opts.queryID ?? 0, 64)
+                .endCell(),
+        });
+    }
+
+
+    async getLastRoot(provider: ContractProvider) {
     const result = await provider.get('get_last_root', []);
     return result.stack.readBigNumberOpt();
   }
@@ -217,5 +236,45 @@ export class TonnelJetton implements Contract {
     }
 
   }
+
+  async sendChangeConfig(
+      provider: ContractProvider,
+      via: Sender,
+      opts: {
+        value: bigint;
+        queryID?: number;
+        new_fee_per_thousand: number;
+        new_tonnel_mint_amount_deposit: number;
+        new_tonnel_mint_amount_relayer: number;
+        deposit_fee: string
+      }
+  ) {
+    await provider.internal(via, {
+      value: opts.value,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      body: beginCell()
+          .storeUint(Opcodes.changeConfig, 32)
+          .storeUint(opts.queryID ?? 0, 64)
+          .storeAddress(via.address)
+          .storeUint(opts.new_fee_per_thousand, 16)
+          .storeUint(opts.new_tonnel_mint_amount_deposit, 32)
+          .storeUint(opts.new_tonnel_mint_amount_relayer, 32)
+          .storeCoins(toNano(opts.deposit_fee))
+          .endCell(),
+    });
+  }
+
+    async getRootKnown(provider: ContractProvider, root: bigint) {
+        const result = await provider.get('get_root_known', [
+            {type: 'int', value: root},
+        ]);
+        return result.stack.readNumber();
+    }
+  async getMinStuck(provider: ContractProvider) {
+    const result = await provider.get('get_min_stuck', []);
+    console.log(result.stack)
+    return result.stack.readBigNumber();
+  }
+
 
 }

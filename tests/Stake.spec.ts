@@ -79,62 +79,7 @@ describe('Stake', () => {
       success: true,
     });
 
-    const setTonnelResult = await stake.sendSetTonnel(owner.getSender(), {
-      queryID: 1,
-      value: toNano('0.02'),
-      jettonWalletBytecode: codeWallet,
-      jettonMasterAddress: jettonMinter.address,
-    });
-
-    expect(setTonnelResult.transactions).toHaveTransaction({
-      from: owner.address,
-      to: stake.address,
-      success: true,
-    });
   });
-
-  it('should deploy and stake TON', async () => {
-    const owner = await blockchain.treasury('owner');
-    const depositAmount = 1;
-    const stakeTonResult = await stake.sendStakeTON(owner.getSender(), {
-      queryID: 1,
-      value: toNano((depositAmount + 0.02).toString()),
-    });
-    expect(stakeTonResult.transactions).toHaveTransaction({
-      from: owner.address,
-      to: stake.address,
-      success: true,
-    });
-    expect(await stake.getBalance()).toBeGreaterThanOrEqual(toNano(depositAmount));
-
-    const withdrawTonResult = await stake.sendWithdrawTON(owner.getSender(), {
-      queryID: 1,
-      value: toNano("0.02"),
-      amount: toNano((depositAmount).toString()),
-    });
-    expect(withdrawTonResult.transactions).toHaveTransaction({
-      from: owner.address,
-      to: stake.address,
-      success: true,
-    });
-    expect(withdrawTonResult.transactions).toHaveTransaction({
-      from: stake.address,
-      to: owner.address,
-      success: true,
-      value: toNano((depositAmount).toString()),
-    });
-
-    const withdrawTonResult2 = await stake.sendWithdrawTON(owner.getSender(), {
-      queryID: 1,
-      value: toNano("0.02"),
-      amount: toNano((depositAmount).toString()),
-    });
-    expect(withdrawTonResult2.transactions).toHaveTransaction({
-      from: owner.address,
-      to: stake.address,
-      success: false
-    });
-  }, 10000);
 
   it('should deploy and stake TONNEL', async () => {
     const sender = await blockchain.treasury('sender');
@@ -153,7 +98,34 @@ describe('Stake', () => {
       queryId: 0,
       fwdAmount: toNano('0.02'),
       jettonAmount: toNano('10'),
-      fwdPayload: beginCell().endCell()
+      fwdPayload: beginCell().storeUint(1, 64).endCell()
+    });
+
+    const stakeResult2 = await jettonWalletStaker.sendTransfer(sender.getSender(), {
+      value: toNano(( 0.07).toString()),
+      toAddress: stake.address,
+      queryId: 0,
+      fwdAmount: toNano('0.02'),
+      jettonAmount: toNano('20'),
+      fwdPayload: beginCell().storeUint(2, 64).endCell()
+    });
+
+    const stakeResult3 = await jettonWalletStaker.sendTransfer(sender.getSender(), {
+      value: toNano(( 0.07).toString()),
+      toAddress: stake.address,
+      queryId: 0,
+      fwdAmount: toNano('0.02'),
+      jettonAmount: toNano('20'),
+      fwdPayload: beginCell().storeUint(3, 64).endCell()
+    });
+
+    const stakeResult4 = await jettonWalletStaker.sendTransfer(sender.getSender(), {
+      value: toNano(( 0.07).toString()),
+      toAddress: stake.address,
+      queryId: 0,
+      fwdAmount: toNano('0.02'),
+      jettonAmount: toNano('10'),
+      fwdPayload: beginCell().storeUint(1, 64).endCell()
     });
 
     expect(stakeResult.transactions).toHaveTransaction({
@@ -167,13 +139,15 @@ describe('Stake', () => {
       success: true,
     });
 
-    expect(await jettonWalletStakeContract.getBalance()).toEqual(toNano(10));
+    expect(await jettonWalletStakeContract.getBalance()).toEqual(toNano(60));
 
     const withdrawTonnelResult = await stake.sendWithdrawTONNEL(sender.getSender(), {
       queryID: 0,
       value: toNano("0.02"),
-      amount: toNano((10).toString()),
+      amount: toNano((20).toString()),
+      creed_id: 1
     });
+    console.log(await stake.getUserState(sender.getSender().address, [1, 2, 3]));
     expect(withdrawTonnelResult.transactions).toHaveTransaction({
       from: sender.address,
       to: stake.address,
@@ -194,93 +168,4 @@ describe('Stake', () => {
 
   }, 10000);
 
-  it('should deploy and stake TON & TONNEL and withdraw', async () => {
-
-    const sender = await blockchain.treasury('sender');
-
-
-
-    const depositAmount = 1;
-    const stakeTonResult = await stake.sendStakeTON(owner.getSender(), {
-      queryID: 1,
-      value: toNano((depositAmount + 0.02).toString()),
-    });
-    expect(stakeTonResult.transactions).toHaveTransaction({
-      from: owner.address,
-      to: stake.address,
-      success: true,
-    });
-    expect(await stake.getBalance()).toBeGreaterThanOrEqual(toNano(depositAmount));
-
-
-    const jettonWalletStaker= await blockchain.openContract(
-      JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(sender.address)))
-
-    const jettonWalletStakeContract = await blockchain.openContract(
-      JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(stake.address)))
-
-    const stakeResult = await jettonWalletStaker.sendTransfer(sender.getSender(), {
-      value: toNano(( 0.07).toString()),
-      toAddress: stake.address,
-      queryId: 0,
-      fwdAmount: toNano('0.02'),
-      jettonAmount: toNano('10'),
-      fwdPayload: beginCell().endCell()
-    });
-
-    expect(stakeResult.transactions).toHaveTransaction({
-      from: jettonWalletStaker.address,
-      to: jettonWalletStakeContract.address,
-      success: true,
-    });
-    expect(stakeResult.transactions).toHaveTransaction({
-      from: jettonWalletStakeContract.address,
-      to: stake.address,
-      success: true,
-    });
-
-    expect(await jettonWalletStakeContract.getBalance()).toEqual(toNano(10));
-
-
-    const withdrawTonnelResult = await stake.sendWithdrawTONNEL(sender.getSender(), {
-      queryID: 0,
-      value: toNano("0.02"),
-      amount: toNano((5).toString()),
-    });
-    expect(withdrawTonnelResult.transactions).toHaveTransaction({
-      from: sender.address,
-      to: stake.address,
-      success: true,
-    });
-    expect(await jettonWalletStakeContract.getBalance()).toEqual(toNano(5));
-    expect(await jettonWalletStaker.getBalance()).toEqual(toNano(95));
-    const withdrawTonnelResult2 = await stake.sendWithdrawTONNEL(sender.getSender(), {
-      queryID: 0,
-      value: toNano("0.02"),
-      amount: toNano((5).toString()),
-    });
-    expect(withdrawTonnelResult2.transactions).toHaveTransaction({
-      from: sender.address,
-      to: stake.address,
-      success: true,
-    });
-
-
-    const withdrawTonResult = await stake.sendWithdrawTON(owner.getSender(), {
-      queryID: 1,
-      value: toNano("0.02"),
-      amount: toNano((depositAmount).toString()),
-    });
-    expect(withdrawTonResult.transactions).toHaveTransaction({
-      from: owner.address,
-      to: stake.address,
-      success: true,
-    });
-    expect(withdrawTonResult.transactions).toHaveTransaction({
-      from: stake.address,
-      to: owner.address,
-      success: true,
-      value: toNano((depositAmount).toString()),
-    });
-  });
 });

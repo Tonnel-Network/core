@@ -13,7 +13,7 @@
 
 # constants
 TARGET_CIRCUIT=../../circuits/withdraw.circom
-PTAU_FILE=../../scripts/pot21_final.ptau
+PTAU_FILE=pot14_final.ptau
 ENTROPY_FOR_ZKEY=mnbvc
 
 cd "$(dirname "$0")"
@@ -39,7 +39,7 @@ circom $TARGET_CIRCUIT --r1cs circuit.r1cs --wasm circuit.wasm --prime bls12381 
 # you can either download $PTAU_FILE or generate it by yourself
 
 ##### Genereate:
-#snarkjs powersoftau new bls12-381 14 pot14_0000.ptau -v
+#snarkjs powersoftau new bls12-381 17 pot14_0000.ptau -v
 #snarkjs powersoftau contribute pot14_0000.ptau pot14_0001.ptau --name="First contribution" -v
 #snarkjs powersoftau contribute pot14_0001.ptau pot14_0002.ptau --name="Second contribution" -v -e="some random text"
 #echo 'beacon'
@@ -53,12 +53,12 @@ circom $TARGET_CIRCUIT --r1cs circuit.r1cs --wasm circuit.wasm --prime bls12381 
 
 #######
 # download:
-if [ -f ./$PTAU_FILE ]; then
-    echo skip: "$PTAU_FILE already exists"
-else
-    echo "Downloading $PTAU_FILE"
-    wget https://histopia.io/pot14_final.ptau
-fi
+#if [ -f ./$PTAU_FILE ]; then
+#    echo skip: "$PTAU_FILE already exists"
+#else
+#    echo "Downloading $PTAU_FILE"
+#    wget https://histopia.io/pot14_final.ptau
+#fi
 
 # generate circuit_0000.zkey
 echo "Generating circuit_0000.zkey"

@@ -6,8 +6,6 @@ const source = fs.readFileSync(VERIFIER_SOLIDITY_PATH, 'utf8');
 let func_template = fs.readFileSync(FUNC_TEMPLATE_FILE, 'utf8');
 const groth16 = require('snarkjs').groth16;
 
-const wasmPath = path.join(__dirname, "../build/circuits/circuit.wasm");
-const zkeyPath = path.join(__dirname, "../build/circuits/circuit_final.zkey");
 
 
 const {g2Parser} = require("../utils/G2Parser");
@@ -73,9 +71,9 @@ insert_code += g2Parser(delta2[1], delta2[0], g2PointsArray[2].slice(2, 4).rever
 insert_code += "       \n       "
 
 func_template = func_template.replace(';; zk verification code goes here', insert_code)
-
+console.log(insert_code)
 
 // store func_template to a file
-fs.writeFileSync(path.join(__dirname, "../contracts/tonnel.fc"), func_template)
+fs.writeFileSync(path.join("./template.fc"), func_template)
 
 // assert(await groth16.verify(vkey, publicSignals, proof))

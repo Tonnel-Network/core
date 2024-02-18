@@ -1,0 +1,155 @@
+@ -4,8 +4,10 @@
+
+const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
+const ONE_TON = 1000000000;
+
+
+const int op::dedust_swap = 0xe3a0d482;
+const int const::min_swap_price = 30000000; ;; 0.03 TON
+const DEDUST_LP_JETTON_MASTER = "EQAvtGe8Nep_XncmQYJrqzWjjdsTaygzL17bvH_8Rjryz1xu"a;
+const DEDUST_JETTON_VAULT = "EQC8jbJfR7Mu7K5oeyiIoHC3gWLmdCju2pUBucXqmQClB__N"a;
+() send_jetton(slice recepient, int amount, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
+    if (amount == 0) {
+        return ();
+@ -34,13 +36,14 @@ const ONE_TON = 1000000000;
+}
+
+
+() mint_tonnel(slice recepient, int amount, slice JETTON_MASTER_ADDRESS) impure inline {
+() mint_reward(slice recepient, int amount, slice REWARD_MASTER_ADDRESS) impure inline {
+    if (amount == 0) {
+        return ();
+    }
+
+    var msg = begin_cell()
+            .store_uint(0x10, 6) ;; nobounce - int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool src:MsgAddress -> 011000
+            .store_slice(JETTON_MASTER_ADDRESS)
+            .store_slice(REWARD_MASTER_ADDRESS)
+            .store_coins(const::tx_fee_send_jetton)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(op::mint(), 32)
+@ -51,7 +54,7 @@ const ONE_TON = 1000000000;
+                    begin_cell().store_uint(op::internal_transfer(), 32)
+                            .store_uint(0, 64)
+                            .store_coins(amount)
+                            .store_slice(JETTON_MASTER_ADDRESS)
+                            .store_slice(REWARD_MASTER_ADDRESS)
+                            .store_slice(recepient)
+                            .store_coins(1)
+                            .store_uint(0, 1)
+@ -129,6 +132,32 @@ const ONE_TON = 1000000000;
+
+}
+
+cell create_dedust_payload(slice recipient_address, slice referral_address, slice pool_address, int amount) inline {
+    cell params = begin_cell().store_uint(0, 32).store_slice(recipient_address).store_slice(referral_address).store_uint(0,2).end_cell();
+    return begin_cell().store_uint(op::dedust_swap, 32).store_slice(pool_address).store_uint(0,1).store_coins(muldiv(const::min_swap_price, amount, ONE_TON)).store_uint(0, 1).store_ref(params).end_cell();
+}
+
+() send_msg(slice to, int amount, int mode, cell body) impure inline {
+    cell message = begin_cell()
+    .store_uint(0x18, 6)
+    .store_slice(to)
+    .store_coins(amount)
+    .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_ref(body)
+    .end_cell();
+    send_raw_message(message,mode);
+}
+
+
+() send_jettons(int ton_val, int mode, int query_id, int amount, slice to, slice response_destination, int forward_amount, cell forward_payload, slice JETTON_MASTER_ADDRESS, cell JETTON_BYTE_CODE) impure inline {
+    slice jetton_wallet = calculate_user_jetton_wallet_address(my_address(), JETTON_MASTER_ADDRESS, JETTON_BYTE_CODE);
+
+
+    cell msg = begin_cell().store_uint(op::transfer(), 32).store_uint(query_id, 64).store_coins(amount).store_slice(to).store_slice(response_destination).store_uint(0, 1).store_coins(forward_amount).store_uint(1, 1).store_ref(forward_payload).end_cell();
+    send_msg(jetton_wallet, ton_val, mode, msg);
+}
+
+
+;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore all empty messages
+@ -148,7 +177,7 @@ const ONE_TON = 1000000000;
+    int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
+    int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
+
+    (slice fee_recepient, slice tonnel_jetton_master_address, int fee_percent, int tonnel_mint_amount_deposit, int tonnel_mint_amount_relayer, int fee_amount_total, int deposit_fee) = unpack_fee_info(fee_info);
+    (slice fee_recepient, slice reward_master_address, int fee_percent, int tonnel_mint_amount_deposit, int tonnel_mint_amount_relayer, int fee_amount_total, int deposit_fee) = unpack_fee_info(fee_info);
+    if (op == op::transfer_notification()) {
+        ;; should check if jetton is valid
+        int send_amount = in_msg_body~load_coins(); ;; Jettons send
+@ -194,11 +223,9 @@ const ONE_TON = 1000000000;
+            (int index, merkle) = insert(new_root,  merkle);
+            emit_log_simple(op::deposit, begin_cell().store_uint(0 ,8).store_uint(commitment_value, 256).store_uint(index, 32).end_cell().begin_parse());
+        }
+        mint_tonnel(origin_sender, tonnel_mint_amount_deposit * ONE_TON, tonnel_jetton_master_address);
+
+
+;;        mint_reward(origin_sender, tonnel_mint_amount_deposit * ONE_TON / 100, reward_master_address);
+        save_data(merkle,
+            pack_fee_info(fee_recepient, tonnel_jetton_master_address, fee_percent, tonnel_mint_amount_deposit, tonnel_mint_amount_relayer, fee_amount_total + fee_amount, deposit_fee),
+            pack_fee_info(fee_recepient, reward_master_address, fee_percent, tonnel_mint_amount_deposit, tonnel_mint_amount_relayer, fee_amount_total + fee_amount, deposit_fee),
+            nullifiers,
+            pack_jetton_info(jetton_master_address, JETTON_BYTECODE, stucks)
+        );
+@ -278,17 +305,26 @@ const ONE_TON = 1000000000;
+        nullifiers~udict_set(256, nullifier_hash, begin_cell().end_cell().begin_parse());
+        int fee_amount = fee_coef * POOL_SIZE / 1000;
+
+        slice jetton_info_slice = jetton_info.begin_parse();
+        slice jetton_master_address = jetton_info_slice~load_msg_addr();
+        cell JETTON_BYTECODE = jetton_info_slice~load_ref();
+
+        send_jetton(recipient, POOL_SIZE - fee_amount, jetton_master_address, JETTON_BYTECODE);
+        (slice jetton_master_address, cell JETTON_BYTECODE, _) = unpack_jetton_info(jetton_info);
+        send_jetton(sender_address, fee_amount, jetton_master_address, JETTON_BYTECODE);
+        mint_tonnel(sender_address, tonnel_mint_amount_relayer * ONE_TON, tonnel_jetton_master_address);
+        mint_reward(sender_address, tonnel_mint_amount_relayer * ONE_TON / 100, reward_master_address);
+
+        save_data(merkle,
+                fee_info
+            , nullifiers, jetton_info);
+        if (withdraw_info_slice1.slice_bits() > 0){
+
+            cell swap_body = create_dedust_payload(
+                recipient,
+                fee_recepient,
+                DEDUST_LP_JETTON_MASTER
+                ,POOL_SIZE - fee_amount
+            );
+
+            send_jettons(250000000, 1, query_id, POOL_SIZE - fee_amount, DEDUST_JETTON_VAULT, recipient, 200000000, swap_body, jetton_master_address, JETTON_BYTECODE);
+
+        }
+
+
+
+        save_data(merkle, fee_info,nullifiers, jetton_info);
+        emit_log_simple(op::withdraw, begin_cell().store_uint(1 ,8).store_uint(nullifier_hash, 256).store_slice(recipient).store_uint(fee_coef, 32).end_cell().begin_parse());
+
+        return ();
+@ -343,19 +379,20 @@ const ONE_TON = 1000000000;
+        int new_tonnel_mint_amount_relayer = in_msg_body~load_uint(32);
+        int deposit_fee_new = in_msg_body~load_coins();
+        save_data(merkle,
+                pack_fee_info(fee_recepient_new, tonnel_jetton_master_address, new_fee_percent, new_tonnel_mint_amount_deposit, new_tonnel_mint_amount_relayer, fee_amount_total, deposit_fee_new),
+                pack_fee_info(fee_recepient_new, reward_master_address, new_fee_percent, new_tonnel_mint_amount_deposit, new_tonnel_mint_amount_relayer, fee_amount_total, deposit_fee_new),
+                nullifiers,
+                jetton_info);
+        return ();
+
+    }
+    if (op == op::claim_fee) {
+        (slice jetton_master_address, cell JETTON_BYTECODE, _) = unpack_jetton_info(jetton_info);
+
+        (slice jetton_master_address, cell JETTON_BYTECODE, _) = unpack_jetton_info(jetton_info);
+        send_jetton(fee_recepient, fee_amount_total, jetton_master_address, JETTON_BYTECODE);
+
+        fee_amount_total = 0;
+        save_data(merkle,
+                pack_fee_info(fee_recepient, tonnel_jetton_master_address, fee_percent, tonnel_mint_amount_deposit, tonnel_mint_amount_relayer, fee_amount_total, deposit_fee),
+                pack_fee_info(fee_recepient, reward_master_address, fee_percent, tonnel_mint_amount_deposit, tonnel_mint_amount_relayer, fee_amount_total, deposit_fee),
+                nullifiers,
+                jetton_info);
+        return ();

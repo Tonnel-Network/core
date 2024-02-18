@@ -8,6 +8,7 @@ const op::claim_TONNEL = "op::claim_TONNEL"c;
 const op::withdraw_TON = "op::withdraw_TON"c;
 const op::finish_sale = "op::finish_sale"c;
 const op::start_sale = "op::start_sale"c;
+const op::set_ref = "op::set_ref"c;
 
 const error::not_enough_TONs = 100;
 const error::sold_out = 101;
@@ -149,7 +150,6 @@ global slice JETTON_MASTER_ADDRESS;
     (cell referrals, cell purchases, slice owner, int active, int total_sold, int price, int sold_last_cycle, int start_last_cycle) = load_data(); ;; here we populate the storage variables
 
 
-
     int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
     int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
 
@@ -216,6 +216,12 @@ global slice JETTON_MASTER_ADDRESS;
     }
 
     throw_unless(error::access_denied, equal_slices(sender_address, owner));
+    if (op == op::set_ref){
+        int referralId = in_msg_body~load_uint(256);
+        referrals~udict_set(256, referralId, begin_cell().store_slice(in_msg_body).end_cell().begin_parse());
+        save_data(referrals, purchases, owner, active, total_sold, price, sold_last_cycle, start_last_cycle);
+        return ();
+    }
     if (op == op::withdraw_TON) {
         int amount_to_withdraw = in_msg_body~load_coins();
         send_ton(sender_address, amount_to_withdraw);

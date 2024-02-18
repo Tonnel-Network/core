@@ -1,22 +1,31 @@
 import { ethers } from "ethers";
-const sha256Hash = (input: BigInt[]) => {
-  const types: string[] = []
-  for (let i = 0; i < input.length; i ++) {
-    types.push('uint256')
+// @ts-ignore
+import mimcsponge from "../utils/mimcsponge";
+export  function bitsToNumber(bits: any[]) {
+  let result = 0
+  for (const item of bits.slice().reverse()) {
+    result = (result << 1) + item
   }
-  
-  return BigInt(
-    ethers.utils.soliditySha256(
-      types,
-      input.map((x) => x.toString()),
-    ),
-  ) % 52435875175126190479447740508185965837690552500527637822603658699938581184513n;
+  return result
 }
+
 export function Sha256(left: string, right: string): string {
-  const outputJS = sha256Hash([BigInt(left), BigInt(right)])
-  // console.log(outputJS.toString(16),left,right)
-  return outputJS.toString();
+  // const outputJS = sha256Hash([BigInt(left), BigInt(right)])
+  // // console.log(outputJS.toString(16),left,right)
+  // return outputJS.toString();
+  return mimcsponge.multiHash([BigInt(left), BigInt(right)]).toString();
+  // return left;
+
 }
+export const mimcHash = (items: any[]) =>
+    (mimcsponge.multiHash(items.map((item) => BigInt(item))).toString())
+
+export const mimcHash2 = (a: any, b: any) =>
+    (mimcsponge.multiHash([BigInt(a), BigInt(b)]).toString())
+
+export const mimcHash3 = (a: any, b: any, c: any) =>
+    (mimcsponge.multiHash([BigInt(a), BigInt(b), BigInt(c)]).toString())
+
 
 export interface IMerkleTree {
   root: () => string;

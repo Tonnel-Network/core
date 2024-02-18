@@ -1,6 +1,6 @@
 import {
   Address,
-  beginCell,
+  beginCell, Builder,
   Cell,
   Contract,
   contractAddress,
@@ -53,6 +53,7 @@ export class NFTItem implements Contract {
                        value: bigint;
                        commitment: bigint;
                        id: number;
+                       payload: Builder
                      }) {
     await provider.internal(via, {
       value: opts.value,
@@ -63,9 +64,10 @@ export class NFTItem implements Contract {
         .storeAddress(opts.toAddress)
         .storeUint(0, 2)
         .storeBit(false)
-        .storeCoins(toNano("1.5"))
+        .storeCoins(toNano("0.15"))
         .storeBit(false)
-        .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(opts.id, 32).endCell())
+        .storeRef(beginCell().storeUint(opts.commitment, 256).storeUint(opts.id, 32).storeBuilder(opts.payload).endCell())
+
 
         .endCell(),
     });

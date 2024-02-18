@@ -4,9 +4,9 @@ import {
   Cell,
   Contract,
   contractAddress,
-  ContractProvider,
+  ContractProvider, fromNano,
   Sender,
-  SendMode
+  SendMode, TupleReader
 } from 'ton-core';
 
 export type StakeConfig = {
@@ -24,7 +24,7 @@ export const Opcodes = {
   stake_TONNEL: 778,
   withdraw_TON: 779,
   withdraw_TONNEL: 780,
-  set_TONNEL: 781,
+  claim_TONNEL: 781,
 };
 // const error::not_staked = 700;
 // const error::not_enough = 701;
@@ -100,6 +100,7 @@ export class Stake implements Contract {
       value: bigint;
       queryID?: number;
       amount: bigint;
+      creed_id?: number;
     }
   ) {
     await provider.internal(via, {
@@ -109,28 +110,27 @@ export class Stake implements Contract {
         .storeUint(Opcodes.withdraw_TONNEL, 32)
         .storeUint(opts.queryID ?? 0, 64)
         .storeCoins(opts.amount)
+        .storeUint(opts.creed_id || 0, 64)
         .endCell(),
     });
   }
 
-  async sendSetTonnel(
+  async sendClaimTonnel(
     provider: ContractProvider,
     via: Sender,
     opts: {
       value: bigint;
       queryID?: number;
-      jettonMasterAddress: Address;
-      jettonWalletBytecode: Cell;
+      amount: bigint;
     }
   ) {
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
       body: beginCell()
-        .storeUint(Opcodes.set_TONNEL, 32)
+        .storeUint(Opcodes.claim_TONNEL, 32)
         .storeUint(opts.queryID ?? 0, 64)
-        .storeAddress(opts.jettonMasterAddress)
-        .storeRef(opts.jettonWalletBytecode)
+        .storeCoins(opts.amount)
         .endCell(),
     });
   }
@@ -138,6 +138,35 @@ export class Stake implements Contract {
   async getBalance(provider: ContractProvider) {
     const result = await provider.getState();
     return result.balance;
+  }
+
+  async getUserState(provider: ContractProvider, address: Address, creeds: number[]) {
+    const result = await provider.get('get_user_state', [
+      {type: 'slice',
+        cell: beginCell().storeAddress(address).endCell()
+      },
+      {type: 'tuple',
+        items: creeds.map((item) => {
+          return {
+            type: 'int',
+                value: BigInt(item)
+          }
+        })
+      }
+    ]);
+    const tuple = result.stack.readTuple();
+    let res = [];
+    for (var i = 0; i < creeds.length; i++) {
+      const temp = tuple.pop();
+
+      if (temp.type == 'int') {
+        res.push(fromNano(temp.value));
+      }
+
+    }
+
+    console.log(res)
+    return res;
   }
 
 }

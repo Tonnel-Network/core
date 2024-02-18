@@ -1,0 +1,290 @@
+#include "./stdlib.fc";
+
+int mulrshiftr256(int x, int y) asm "256 MULRSHIFTR#";
+(int, int) lshiftdivmodr(int x, int y, int s) asm "LSHIFTDIVMODR";
+
+
+const int fixed248::One = (1 << 248);
+const int fixed255::One = (1 << 255);
+
+{-------------------- USEFUL CONSTANTS --------------------}
+
+;; store huge constants in inline_ref functions for reuse
+;; (y,z) where y=round(log(2)*2^256), z=round((log(2)*2^256-y)*2^128)
+;; then log(2) = y/2^256 + z/2^384
+(int, int) log2_xconst_f256() inline_ref {
+    return (80260960185991308862233904206310070533990667611589946606122867505419956976172, -32272921378999278490133606779486332143);
+}
+
+;; fixed257 expm1_f257(fixed257 x)
+;; computes exp(x)-1 for small x via 19 terms of Lambert's continued fraction for tanh(x/2)
+;; good for |x| < log(2)/2 = 0.347 (n=17); consumes ~3500 gas
+int expm1_f257(int x) inline_ref {
+    ;; (almost) compute tanh(x/2) first; x/2 as fixed258 = x as fixed257
+    int x2 = muldivr(x, x, 1 << 255);     ;; x^2 as fixed261
+    int Two = (1 << 251);   ;; 2. as fixed250
+    int c = int a = touch(39) << 250;   ;; a=2n+5 as fixed250
+    repeat (17) {
+        a = (c -= Two) + muldivr(x2, 1 << 239, a);      ;; a := 2k+1+x^2/a as fixed250, k=n+1,n,...,2
+    }
+    a = (touch(3) << 254) + muldivr(x2, 1 << 243, a);    ;; a := 3+x^2/a as fixed254
+    ;; now tanh(x/2) = x/(1+a') where a'=x^2/a ; apply exp(x)-1=2*tanh(x/2)/(1-tanh(x/2))
+    int t = (x ~>> 4) - a;   ;; t:=x-a as fixed254
+    return x - muldivr(x2, t / 2, a + mulrshiftr256(x, t) ~/ 4) ~/ 4;  ;; x - x^2 * (x-a) / (a + x*(x-a))
+}
+
+;; expm1_f257() may be used to implement specific fixed-point exponentials
+;; example:
+;; fixed248 exp(fixed248 x)
+int fixed248::exp(int x) inline_ref {
+    var (l2c, l2d) = log2_xconst_f256();
+    ;; divide x by log(2) and convert to fixed257
+    ;; (int q, x) = muldivmodr(x, 256, l2c);  ;; unfortunately, no such built-in
+    (int q, x) = lshiftdivmodr(x, l2c, 8);
+    x = 2 * x - muldivr(q, l2d, 1 << 127);
+    int y = expm1_f257(x);
+    ;; result is (1 + y) * (2^q) --> ((1 << 257) + y) >> (9 - q)
+    return (y ~>> (9 - q)) - (-1 << (248 + q));
+    ;; note that (y ~>> (9 - q)) + (1 << (248 + q)) leads to overflow when q=8
+}
+
+const int MIN_64x64 = -0x80000000000000000000000000000000;
+
+const int MAX_64x64 = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+
+
+int exp_2(int x) inline_ref {
+    ;;    require (x < 0x400000000000000000); // Overflow
+    throw_unless(1000, x < 0x400000000000000000);
+
+    ;;    if (x < -0x400000000000000000) return 0; // Underflow
+    if (x < -0x400000000000000000) {
+        return 0;
+    }
+
+    int result = 0x80000000000000000000000000000000;
+
+    if (x & 0x8000000000000000 > 0) {
+
+        result = result * 0x16A09E667F3BCC908B2FB1366EA957D3E >> 128;
+    }
+    if (x & 0x4000000000000000 > 0) {
+        result = result * 0x1306FE0A31B7152DE8D5A46305C85EDEC >> 128;
+    } if (x & 0x2000000000000000 > 0) {
+        result = result * 0x1172B83C7D517ADCDF7C8C50EB14A791F >> 128;
+    } if (x & 0x1000000000000000 > 0) {
+        result = result * 0x10B5586CF9890F6298B92B71842A98363 >> 128;
+    } if (x & 0x800000000000000 > 0) {
+        result = result * 0x1059B0D31585743AE7C548EB68CA417FD >> 128;
+    } if (x & 0x400000000000000 > 0) {
+        result = result * 0x102C9A3E778060EE6F7CACA4F7A29BDE8 >> 128;
+    } if (x & 0x200000000000000 > 0) {
+        result = result * 0x10163DA9FB33356D84A66AE336DCDFA3F >> 128;
+    } if (x & 0x100000000000000 > 0) {
+        result = result * 0x100B1AFA5ABCBED6129AB13EC11DC9543 >> 128;
+    } if (x & 0x80000000000000 > 0) {
+        result = result * 0x10058C86DA1C09EA1FF19D294CF2F679B >> 128;
+    } if (x & 0x40000000000000 > 0) {
+        result = result * 0x1002C605E2E8CEC506D21BFC89A23A00F >> 128;
+    } if (x & 0x20000000000000 > 0) {
+        result = result * 0x100162F3904051FA128BCA9C55C31E5DF >> 128;
+    } if (x & 0x10000000000000 > 0) {
+        result = result * 0x1000B175EFFDC76BA38E31671CA939725 >> 128;
+    } if (x & 0x8000000000000 > 0) {
+        result = result * 0x100058BA01FB9F96D6CACD4B180917C3D >> 128;
+    } if (x & 0x4000000000000 > 0) {
+        result = result * 0x10002C5CC37DA9491D0985C348C68E7B3 >> 128;
+    } if (x & 0x2000000000000 > 0) {
+        result = result * 0x1000162E525EE054754457D5995292026 >> 128;
+    } if (x & 0x1000000000000 > 0) {
+        result = result * 0x10000B17255775C040618BF4A4ADE83FC >> 128;
+    } if (x & 0x800000000000 > 0) {
+        result = result * 0x1000058B91B5BC9AE2EED81E9B7D4CFAB >> 128;
+    } if (x & 0x400000000000 > 0) {
+        result = result * 0x100002C5C89D5EC6CA4D7C8ACC017B7C9 >> 128;
+    } if (x & 0x200000000000 > 0) {
+        result = result * 0x10000162E43F4F831060E02D839A9D16D >> 128;
+    } if (x & 0x100000000000 > 0) {
+        result = result * 0x100000B1721BCFC99D9F890EA06911763 >> 128;
+    } if (x & 0x80000000000 > 0) {
+        result = result * 0x10000058B90CF1E6D97F9CA14DBCC1628 >> 128;
+    } if (x & 0x40000000000 > 0) {
+        result = result * 0x1000002C5C863B73F016468F6BAC5CA2B >> 128;
+    } if (x & 0x20000000000 > 0) {
+        result = result * 0x100000162E430E5A18F6119E3C02282A5 >> 128;
+    } if (x & 0x10000000000 > 0) {
+        result = result * 0x1000000B1721835514B86E6D96EFD1BFE >> 128;
+    } if (x & 0x8000000000 > 0) {
+        result = result * 0x100000058B90C0B48C6BE5DF846C5B2EF >> 128;
+    } if (x & 0x4000000000 > 0) {
+        result = result * 0x10000002C5C8601CC6B9E94213C72737A >> 128;
+    } if (x & 0x2000000000 > 0) {
+        result = result * 0x1000000162E42FFF037DF38AA2B219F06 >> 128;
+    } if (x & 0x1000000000 > 0) {
+        result = result * 0x10000000B17217FBA9C739AA5819F44F9 >> 128;
+    } if (x & 0x800000000 > 0) {
+        result = result * 0x1000000058B90BFCDEE5ACD3C1CEDC823 >> 128;
+    } if (x & 0x400000000 > 0) {
+        result = result * 0x100000002C5C85FE31F35A6A30DA1BE50 >> 128;
+    } if (x & 0x200000000 > 0) {
+        result = result * 0x10000000162E42FF0999CE3541B9FFFCF >> 128;
+    } if (x & 0x100000000 > 0) {
+        result = result * 0x100000000B17217F80F4EF5AADDA45554 >> 128;
+    } if (x & 0x80000000 > 0) {
+        result = result * 0x10000000058B90BFBF8479BD5A81B51AD >> 128;
+    } if (x & 0x40000000 > 0) {
+        result = result * 0x1000000002C5C85FDF84BD62AE30A74CC >> 128;
+    } if (x & 0x20000000 > 0) {
+        result = result * 0x100000000162E42FEFB2FED257559BDAA >> 128;
+    } if (x & 0x10000000 > 0) {
+        result = result * 0x1000000000B17217F7D5A7716BBA4A9AE >> 128;
+    } if (x & 0x8000000 > 0) {
+        result = result * 0x100000000058B90BFBE9DDBAC5E109CCE >> 128;
+    } if (x & 0x4000000 > 0) {
+        result = result * 0x10000000002C5C85FDF4B15DE6F17EB0D >> 128;
+    } if (x & 0x2000000 > 0) {
+        result = result * 0x1000000000162E42FEFA494F1478FDE05 >> 128;
+    } if (x & 0x1000000 > 0) {
+        result = result * 0x10000000000B17217F7D20CF927C8E94C >> 128;
+    } if (x & 0x800000 > 0) {
+        result = result * 0x1000000000058B90BFBE8F71CB4E4B33D >> 128;
+    } if (x & 0x400000 > 0) {
+        result = result * 0x100000000002C5C85FDF477B662B26945 >> 128;
+    } if (x & 0x200000 > 0) {
+        result = result * 0x10000000000162E42FEFA3AE53369388C >> 128;
+    } if (x & 0x100000 > 0) {
+        result = result * 0x100000000000B17217F7D1D351A389D40 >> 128;
+    } if (x & 0x80000 > 0) {
+        result = result * 0x10000000000058B90BFBE8E8B2D3D4EDE >> 128;
+    } if (x & 0x40000 > 0) {
+        result = result * 0x1000000000002C5C85FDF4741BEA6E77E >> 128;
+    } if (x & 0x20000 > 0) {
+        result = result * 0x100000000000162E42FEFA39FE95583C2 >> 128;
+    } if (x & 0x10000 > 0) {
+        result = result * 0x1000000000000B17217F7D1CFB72B45E1 >> 128;
+    } if (x & 0x8000 > 0) {
+        result = result * 0x100000000000058B90BFBE8E7CC35C3F0 >> 128;
+    } if (x & 0x4000 > 0) {
+        result = result * 0x10000000000002C5C85FDF473E242EA38 >> 128;
+    } if (x & 0x2000 > 0) {
+        result = result * 0x1000000000000162E42FEFA39F02B772C >> 128;
+    } if (x & 0x1000 > 0) {
+        result = result * 0x10000000000000B17217F7D1CF7D83C1A >> 128;
+    } if (x & 0x800 > 0) {
+        result = result * 0x1000000000000058B90BFBE8E7BDCBE2E >> 128;
+    } if (x & 0x400 > 0) {
+        result = result * 0x100000000000002C5C85FDF473DEA871F >> 128;
+    } if (x & 0x200 > 0) {
+        result = result * 0x10000000000000162E42FEFA39EF44D91 >> 128;
+    } if (x & 0x100 > 0) {
+        result = result * 0x100000000000000B17217F7D1CF79E949 >> 128;
+    } if (x & 0x80 > 0) {
+        result = result * 0x10000000000000058B90BFBE8E7BCE544 >> 128;
+    } if (x & 0x40 > 0) {
+        result = result * 0x1000000000000002C5C85FDF473DE6ECA >> 128;
+    } if (x & 0x20 > 0) {
+        result = result * 0x100000000000000162E42FEFA39EF366F >> 128;
+    } if (x & 0x10 > 0) {
+        result = result * 0x1000000000000000B17217F7D1CF79AFA >> 128;
+    } if (x & 0x8 > 0) {
+        result = result * 0x100000000000000058B90BFBE8E7BCD6D >> 128;
+    } if (x & 0x4 > 0) {
+        result = result * 0x10000000000000002C5C85FDF473DE6B2 >> 128;
+    } if (x & 0x2 > 0) {
+        result = result * 0x1000000000000000162E42FEFA39EF358 >> 128;
+    } if (x & 0x1 > 0) {
+        result = result * 0x10000000000000000B17217F7D1CF79AB >> 128;
+    }
+
+    result >>= (63 - (x >> 64));
+
+    ;;    require (result <= uint256 (MAX_64x64));
+    throw_unless(1001, result <= MAX_64x64);
+
+    return result;
+}
+
+int divuu(int x, int y) inline_ref {
+    throw_unless(1002, y > 0);
+
+    int result = 0;
+
+    if (x <= 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+    {
+        result = (x << 64) / y;
+    }
+    else {
+        int msb = 192;
+        int xc = x >> 192;
+        if (xc >= 0x100000000) {
+            xc >>= 32; msb += 32;
+        }
+        if (xc >= 0x10000) {
+            xc >>= 16; msb += 16;
+        }
+        if (xc >= 0x100) {
+            xc >>= 8; msb += 8;
+        }
+        if (xc >= 0x10) {
+            xc >>= 4; msb += 4;
+        }
+        if (xc >= 0x4) {
+            xc >>= 2; msb += 2;
+        }
+        if (xc >= 0x2) {
+            msb += 1;
+        }
+
+        result = (x << 255 - msb) / ((y - 1 >> msb - 191) + 1);
+        ;;        require (result <= 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF);
+
+        int hi = result * (y >> 128);
+        int lo = result * (y & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF);
+
+        int xh = x >> 192;
+        int xl = x << 64;
+
+        if (xl < lo) {
+            xh -= 1;
+        }
+        xl -= lo;
+        lo = hi << 128;
+        if (xl < lo) {
+            xh -= 1;
+        }
+        xl -= lo;
+
+        throw_unless(1003, xh == hi >> 128);
+
+        result += xl / y;
+    }
+
+    throw_unless(1004, result <= 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF);
+    return (result);
+}
+
+int exp(int x) inline_ref {
+    return exp_2 (
+         x * 0x171547652B82FE1777D0FFDA0D23A7D12 >> 128
+    );
+}
+
+int mulu(int x, int y) inline_ref {
+    if (y == 0) {
+        return 0;
+    }
+
+;;    require (x >= 0);
+    throw_unless(1005, x >= 0);
+    int lo = (x * (y & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)) >> 64;
+    int hi = x * (y >> 128);
+
+;;    require (hi <= 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF);
+    throw_unless(1006, hi <= 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF);
+    hi <<= 64;
+
+;;    require (hi <=
+;;    0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF - lo);
+    throw_unless(1007, hi <= 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF - lo);
+    return hi + lo;
+}
