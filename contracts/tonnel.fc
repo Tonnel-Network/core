@@ -178,7 +178,6 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
             )
         );
 
-
         save_data(merkle, fee_info, nullifiers, stucks);
 
         return ();
@@ -199,57 +198,57 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
         cell addresses = withdraw_info_slice1~load_ref();
         slice addresses_slice = addresses.begin_parse();
         slice recipient = addresses_slice~load_msg_addr();
-;;        throw_unless(error::verify_failed_double_spend, is_unknown_nullifier(nullifier_hash, nullifiers));
-;;        throw_unless(error::verify_failed_input, root < FIELD_SIZE);
-;;        throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
-;;        throw_unless(error::verify_failed_fee, fee_coef < 1000);
-;;        throw_unless(error::verify_failed_root, is_known_root(root));
+        throw_unless(error::verify_failed_double_spend, is_unknown_nullifier(nullifier_hash, nullifiers));
+        throw_unless(error::verify_failed_input, root < FIELD_SIZE);
+        throw_unless(error::verify_failed_input, nullifier_hash < FIELD_SIZE);
+        throw_unless(error::verify_failed_fee, fee_coef < 1000);
+        throw_unless(error::verify_failed_root, is_known_root(root));
 
 
-        ;;
-        ;;
-        ;; Verifying Key constants
-        ;;
-        ;;
-;;        slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
-;;        slice IC0 =  begin_cell().store_uint(198693471336772, 48).store_uint(15156426526669, 48).store_uint(21195839689806, 48).store_uint(134982884807240, 48).store_uint(98831944029365, 48).store_uint(259765280790088, 48).store_uint(226730109320416, 48).store_uint(68580818820928, 48).end_cell().begin_parse();
-;;        slice IC1 =  begin_cell().store_uint(176967888897437, 48).store_uint(52716870066022, 48).store_uint(266882219203136, 48).store_uint(188956541049375, 48).store_uint(9638093056127, 48).store_uint(67879553530711, 48).store_uint(230356572703382, 48).store_uint(141548705617042, 48).end_cell().begin_parse();
-;;        slice IC2 =  begin_cell().store_uint(185395607204924, 48).store_uint(103443686280834, 48).store_uint(16299229901343, 48).store_uint(112743106922236, 48).store_uint(67855685651818, 48).store_uint(19837995827628, 48).store_uint(5441989873390, 48).store_uint(68958062110528, 48).end_cell().begin_parse();
-;;        slice IC3 =  begin_cell().store_uint(191936250497323, 48).store_uint(102852184355624, 48).store_uint(24212641576709, 48).store_uint(49960405572007, 48).store_uint(18362271019258, 48).store_uint(136287956340028, 48).store_uint(1904901475255, 48).store_uint(217912711665299, 48).end_cell().begin_parse();
-;;        slice IC4 =  begin_cell().store_uint(147302141626805, 48).store_uint(120430951176259, 48).store_uint(71432139964580, 48).store_uint(205694061489863, 48).store_uint(151837152275069, 48).store_uint(13848984095571, 48).store_uint(278746640718118, 48).store_uint(253311207974946, 48).end_cell().begin_parse();
-;;        slice beta2 =  begin_cell().store_uint(45268298785829999156800790826, 96).store_uint(49616257531946340397706624184, 96).store_uint(21860288103068343353898458482, 96).store_uint(44130212597109342573800170705, 96).store_uint(4047260717587677040649332350, 96).store_uint(38438004468883114874440114862, 96).store_uint(37382830912273952379501564462, 96).store_uint(68660724947650442889836600213, 96).end_cell().begin_parse();
-;;        slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
-;;        slice delta2 =  begin_cell().store_uint(55611436019896542363365837820, 96).store_uint(36626239938280781222883835257, 96).store_uint(52040279991528111570885655812, 96).store_uint(2749671938796122801512470023, 96).store_uint(5914597108141076486454435704, 96).store_uint(13817988269852185537550968540, 96).store_uint(77612211829949484497625105164, 96).store_uint(61055469537419651796629832676, 96).end_cell().begin_parse();
 
-;;        cell A_cell = withdraw_info_slice1~load_ref();
-;;        cell B_cell = withdraw_info_slice1~load_ref();
-;;        cell C_cell = withdraw_info_slice1~load_ref();
-;;        slice A = A_cell.begin_parse();
-;;        slice B = B_cell.begin_parse();
-;;        slice C = C_cell.begin_parse();
-;;        slice vk_x = IC0;
-;;
-;;
-;;        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
-;;        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, nullifier_hash));
-;;        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, recipient.preload_uint(256)));
-;;        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, fee_coef));
-;;
-;;
-;;
-;;        slice neg_a = bls_g1_negate(A);
-;;        int success = bls_pairing_check(neg_a,
-;;                B,
-;;                alf1,
-;;                beta2,
-;;                vk_x,
-;;                gamma2,
-;;                C,
-;;                delta2,
-;;                4);
-;;        ifnot (success) {
-;;            throw(error::verify_failed);
-;;        }
+
+;;         Verifying Key constants
+        
+
+        slice alf1 =  begin_cell().store_uint(182000286537471, 48).store_uint(188678401565571, 48).store_uint(187245209450396, 48).store_uint(127518005434324, 48).store_uint(144397100865470, 48).store_uint(258741821310885, 48).store_uint(125665759774218, 48).store_uint(36382829990144, 48).end_cell().begin_parse();
+        slice IC0 =  begin_cell().store_uint(198693471336772, 48).store_uint(15156426526669, 48).store_uint(21195839689806, 48).store_uint(134982884807240, 48).store_uint(98831944029365, 48).store_uint(259765280790088, 48).store_uint(226730109320416, 48).store_uint(68580818820928, 48).end_cell().begin_parse();
+        slice IC1 =  begin_cell().store_uint(176967888897437, 48).store_uint(52716870066022, 48).store_uint(266882219203136, 48).store_uint(188956541049375, 48).store_uint(9638093056127, 48).store_uint(67879553530711, 48).store_uint(230356572703382, 48).store_uint(141548705617042, 48).end_cell().begin_parse();
+        slice IC2 =  begin_cell().store_uint(185395607204924, 48).store_uint(103443686280834, 48).store_uint(16299229901343, 48).store_uint(112743106922236, 48).store_uint(67855685651818, 48).store_uint(19837995827628, 48).store_uint(5441989873390, 48).store_uint(68958062110528, 48).end_cell().begin_parse();
+        slice IC3 =  begin_cell().store_uint(191936250497323, 48).store_uint(102852184355624, 48).store_uint(24212641576709, 48).store_uint(49960405572007, 48).store_uint(18362271019258, 48).store_uint(136287956340028, 48).store_uint(1904901475255, 48).store_uint(217912711665299, 48).end_cell().begin_parse();
+        slice IC4 =  begin_cell().store_uint(147302141626805, 48).store_uint(120430951176259, 48).store_uint(71432139964580, 48).store_uint(205694061489863, 48).store_uint(151837152275069, 48).store_uint(13848984095571, 48).store_uint(278746640718118, 48).store_uint(253311207974946, 48).end_cell().begin_parse();
+        slice beta2 =  begin_cell().store_uint(45268298785829999156800790826, 96).store_uint(49616257531946340397706624184, 96).store_uint(21860288103068343353898458482, 96).store_uint(44130212597109342573800170705, 96).store_uint(4047260717587677040649332350, 96).store_uint(38438004468883114874440114862, 96).store_uint(37382830912273952379501564462, 96).store_uint(68660724947650442889836600213, 96).end_cell().begin_parse();
+        slice gamma2 =  begin_cell().store_uint(45765300665918301128790692768, 96).store_uint(42137484379184671317244818970, 96).store_uint(56280794141317933024253112594, 96).store_uint(6059577009407902906031811454, 96).store_uint(709198854518927808499549479, 96).store_uint(14165060894806320894179293954, 96).store_uint(55805278558791767872231965478, 96).store_uint(52000413785700509085167893944, 96).end_cell().begin_parse();
+        slice delta2 =  begin_cell().store_uint(55611436019896542363365837820, 96).store_uint(36626239938280781222883835257, 96).store_uint(52040279991528111570885655812, 96).store_uint(2749671938796122801512470023, 96).store_uint(5914597108141076486454435704, 96).store_uint(13817988269852185537550968540, 96).store_uint(77612211829949484497625105164, 96).store_uint(61055469537419651796629832676, 96).end_cell().begin_parse();
+
+        cell A_cell = withdraw_info_slice1~load_ref();
+        cell B_cell = withdraw_info_slice1~load_ref();
+        cell C_cell = withdraw_info_slice1~load_ref();
+        slice A = A_cell.begin_parse();
+        slice B = B_cell.begin_parse();
+        slice C = C_cell.begin_parse();
+        slice vk_x = IC0;
+
+
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC1, root));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC2, nullifier_hash));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC3, recipient.preload_uint(256)));
+        vk_x = bls_g1_add(vk_x, bls_g1_mul(IC4, fee_coef));
+
+
+
+        slice neg_a = bls_g1_negate(A);
+        int success = bls_pairing_check(neg_a,
+                B,
+                alf1,
+                beta2,
+                vk_x,
+                gamma2,
+                C,
+                delta2,
+                4);
+        ifnot (success) {
+            throw(error::verify_failed);
+        }
 
         nullifiers~udict_set(256, nullifier_hash, begin_cell().end_cell().begin_parse());
         int fee_amount = fee_coef * POOL_SIZE / 1000;
@@ -262,7 +261,6 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
 
         emit_log_simple(op::withdraw, begin_cell().store_uint(1 ,8).store_uint(nullifier_hash, 256).store_slice(recipient).store_uint(fee_coef, 32).end_cell().begin_parse());
 
-        send_ton(sender_address, 0, SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
 
         send_message_tonnel_tree(TONNEL_TREE,
             begin_cell()
@@ -272,6 +270,8 @@ const SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE = 64;
                 begin_cell().store_uint(nullifier_hash, 256).store_uint(now(), 32).end_cell()
             )
         );
+
+        send_ton(sender_address, 0, SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
 
         return ();
 
