@@ -156,7 +156,6 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
                     int timestamp = event_slice2~load_uint(32);
                     int hash_result = cell_hash(begin_cell().store_uint(instance, 32).store_uint(hash, 256).store_uint(timestamp, 32).end_cell());
                     (slice res, int found) = history~udict_delete_get?(32, offset + count);
-
                     throw_unless(error::verify_failed + 200 + count, hash_result == res~load_uint(256));
 
                     history_cache~udict_delete_get?(256, hash_result);
@@ -259,10 +258,11 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         slice commitment_slice = commitment.begin_parse();
         int commitment_value = commitment_slice~load_uint(256);
         int now = commitment_slice~load_uint(32);
+        int instance_id = commitment_slice~load_uint(32);
 
 
         int _depositsLength = depositsLength;
-        int hash_leaf = cell_hash(begin_cell().store_uint(commitment_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now, 32).end_cell());
+        int hash_leaf = cell_hash(begin_cell().store_uint(commitment_value, 256).store_uint(instance_id, 32).store_uint(now, 32).end_cell());
 
         (_, int found) = deposits_cache.udict_get?(256, hash_leaf);
         throw_if(error::verify_failed_double_spend, found);
@@ -272,7 +272,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         deposits~udict_set(32, _depositsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
 
 
-        emit_log_simple(op::register_deposit, begin_cell().store_uint(0 ,8).store_slice(sender_address).store_uint(commitment_value, 256).store_uint(now, 32).store_uint(_depositsLength, 32).end_cell().begin_parse());
+        emit_log_simple(op::register_deposit, begin_cell().store_uint(0 ,8).store_uint(instance_id, 32).store_uint(commitment_value, 256).store_uint(now, 32).store_uint(_depositsLength, 32).end_cell().begin_parse());
 
         depositsLength = _depositsLength + 1;
 
@@ -290,9 +290,10 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         slice nullifier_hash_slice = nullifier_hash.begin_parse();
         int nullifier_hash_value = nullifier_hash_slice~load_uint(256);
         int now = nullifier_hash_slice~load_uint(32);
+        int instance_id = nullifier_hash_slice~load_uint(32);
 
         int _withdrawsLength = withdrawsLength;
-        int hash_leaf = cell_hash(begin_cell().store_uint(nullifier_hash_value, 256).store_uint(sender_address.preload_uint(32), 32).store_uint(now, 32).end_cell());
+        int hash_leaf = cell_hash(begin_cell().store_uint(nullifier_hash_value, 256).store_uint(instance_id, 32).store_uint(now, 32).end_cell());
 
         (_, int found) = withdraws_cache.udict_get?(256, hash_leaf);
         throw_if(error::verify_failed_double_spend, found);
@@ -300,7 +301,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         withdraws_cache~udict_set(256, hash_leaf, begin_cell().store_uint(1, 1).end_cell().begin_parse());
         withdraws~udict_set(32, _withdrawsLength, begin_cell().store_uint(hash_leaf, 256).end_cell().begin_parse());
 
-        emit_log_simple(op::register_withdraw, begin_cell().store_uint(1 ,8).store_slice(sender_address).store_uint(nullifier_hash_value, 256).store_uint(now, 32).store_uint(_withdrawsLength, 32).end_cell().begin_parse());
+        emit_log_simple(op::register_withdraw, begin_cell().store_uint(1 ,8).store_uint(instance_id, 32).store_uint(nullifier_hash_value, 256).store_uint(now, 32).store_uint(_withdrawsLength, 32).end_cell().begin_parse());
 
         withdrawsLength = _withdrawsLength + 1;
 
@@ -347,7 +348,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
         emit_log_simple(op::update_deposit_root, begin_cell().store_uint(2 ,8).store_uint(offset, 32).end_cell().begin_parse());
 
         save_data(
-                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, offset, deposits_cache),
+                pack_tree_data(depositRoot, previousDepositRoot, deposits, depositsLength, lastProcessedDepositLeaf, deposits_cache),
                 withdrawData,
                 governance
             );
@@ -389,7 +390,7 @@ global int tx_fee_send_reward_miner; ;; 0.4 TON
 
         save_data(
                 depositData,
-                pack_tree_data(_newRoot, _currentRoot, withdraws, withdrawsLength, offset, withdraws_cache),
+                pack_tree_data(_newRoot, _currentRoot, withdraws, withdrawsLength, lastProcessedWithdrawLeaf, withdraws_cache),
                 governance
             );
         return ();

@@ -523,7 +523,17 @@ global int AccountUpdate::outputCommitment;
         if(equal_slices(sender_address, ADMIN_ADDRESS)){
             int new_rate = in_msg_body~load_uint(32);
             int pool = in_msg_body~load_uint(32);
+
             setRates(pool, new_rate);
+            save_data();
+            return ();
+        }
+    }
+    if(op == 113) {
+        if(equal_slices(sender_address, ADMIN_ADDRESS)){
+            TONNEL_TREE_ADDRESS = in_msg_body~load_msg_addr();
+            REWARD_SWAP_ADDRESS = in_msg_body~load_msg_addr();
+
             save_data();
             return ();
         }
